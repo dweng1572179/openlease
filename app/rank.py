@@ -88,7 +88,8 @@ def rank_listings(candidate_ids: list[int], q: ListingQuery) -> list[dict]:
     fused = rrf(lists) if lists else []
 
     ordered = [i for i, _ in fused]
-    ordered += [i for i in candidate_ids if i not in set(ordered)]
+    seen = set(ordered)
+    ordered += [i for i in candidate_ids if i not in seen]
 
     holes = ",".join("?" * len(candidate_ids))
     with get_conn() as conn:

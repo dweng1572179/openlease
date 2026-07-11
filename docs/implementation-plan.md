@@ -1605,6 +1605,16 @@ def test_rrf_fuses_two_lists():
     assert scores[9] > scores[7]
 
 
+def test_rrf_k_is_60_and_ranks_are_1_indexed():
+    """The ordering assertions above hold for ANY k and either indexing base, so they
+    cannot catch a regression in the two constants the spec calls load-bearing. Pin the
+    arithmetic itself: rank-1 in a single list scores exactly 1/(60+1)."""
+    assert rank.RRF_K == 60
+    scores = dict(rank.rrf([[7, 3]]))
+    assert abs(scores[7] - 1 / 61) < 1e-12, scores   # 1-indexed: 1/(60+1), not 1/(60+0)
+    assert abs(scores[3] - 1 / 62) < 1e-12, scores
+
+
 def test_rank_listings_returns_every_candidate():
     ids = _setup()
     q = ListingQuery(keywords=["Wynwood", "retail"], max_rent_per_sf_yr=100)
