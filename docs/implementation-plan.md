@@ -1822,20 +1822,33 @@ def _rules_parse(message: str, metro: str) -> ListingQuery:
     out.property_types = [t for t in _TYPES if t in q]
     if "for sale" in q or "buy" in q or "purchase" in q:
         out.transaction_type = "sale"
+    # size_hint is the user's actual stated number (e.g. the 1,500 in "~1,500 SF"). It's
+    # kept separate from out.min/max_size_sf because the "~" branch below WIDENS those
+    # into a range (1125/1875) for filtering purposes — but the rent-per-SF conversion
+    # two blocks down needs the original figure the user typed, not the widened range,
+    # or "$8k/mo for ~1,500 SF" silently converts against 1875 and comes out 51.2
+    # instead of the correct 64. [Corrected during Task 4 implementation — the original
+    # draft below reused `out.max_size_sf or out.min_size_sf`, which is the WIDENED range
+    # endpoint (1875), not the stated figure (1500); 8000*12/1875 = 51.2, not the 64.0 both
+    # this plan's own demo()/test assert. size_hint fixes it without changing any other
+    # branch's behavior — where a size was stated explicitly (not "~"), size_hint equals
+    # out.max_size_sf/min_size_sf exactly as before.]
+    size_hint = 0
     if m := re.search(r"(?:under|below|less than|max|up to)\s*([\d,]+)\s*(?:sf|sq|square)", q):
         out.max_size_sf = int(m.group(1).replace(",", ""))
+        size_hint = out.max_size_sf
     if m := re.search(r"(?:over|above|at least|min|minimum)\s*([\d,]+)\s*(?:sf|sq|square)", q):
         out.min_size_sf = int(m.group(1).replace(",", ""))
+        size_hint = size_hint or out.min_size_sf
     if not out.min_size_sf and not out.max_size_sf:
         if m := re.search(r"([\d,]{3,})\s*(?:sf|sq ?ft|square feet)", q):   # "~1,500 SF"
-            sf = int(m.group(1).replace(",", ""))
-            out.min_size_sf, out.max_size_sf = int(sf * 0.75), int(sf * 1.25)
+            size_hint = int(m.group(1).replace(",", ""))
+            out.min_size_sf, out.max_size_sf = int(size_hint * 0.75), int(size_hint * 1.25)
     # "$8k/mo" or "$8,000 a month" -> per-SF-per-year, but ONLY if we know the size
     if m := re.search(r"\$\s*([\d,.]+)\s*(k)?\s*(?:/|per |a )\s*mo", q):
         monthly = float(m.group(1).replace(",", "")) * (1000 if m.group(2) else 1)
-        sf = out.max_size_sf or out.min_size_sf
-        if sf:
-            out.max_rent_per_sf_yr = round(monthly * 12 / sf, 2)
+        if size_hint:
+            out.max_rent_per_sf_yr = round(monthly * 12 / size_hint, 2)
     elif m := re.search(r"\$\s*([\d,.]+)\s*(?:/|per )\s*(?:sf|psf)", q):
         out.max_rent_per_sf_yr = float(m.group(1).replace(",", ""))
     for hood in METROS.get(metro, {}).get("boroughs", []):
@@ -1899,7 +1912,7 @@ def demo() -> None:
     q = _rules_parse("retail in Wynwood ~1,500 SF under $8k/mo", "mia")
     assert q.property_types == ["retail"], q
     assert q.min_size_sf == 1125 and q.max_size_sf == 1875, q
-    assert q.max_rent_per_sf_yr == 64.0, q.max_rent_per_sf_yr   # 8000*12/1875
+    assert q.max_rent_per_sf_yr == 64.0, q.max_rent_per_sf_yr   # 8000*12/1500
     assert "wynwood" in " ".join(q.keywords), q.keywords
 
     # the schema rules that cost OpenProp its whole first life — enforced, not remembered
@@ -1950,7 +1963,7 @@ def test_rules_parse_monthly_budget_to_rent_per_sf_yr():
     q = ai._rules_parse("retail in Wynwood ~1,500 SF under $8k/mo", "mia")
     assert q.property_types == ["retail"]
     assert q.min_size_sf == 1125 and q.max_size_sf == 1875
-    assert q.max_rent_per_sf_yr == 64.0          # 8000 * 12 / 1875
+    assert q.max_rent_per_sf_yr == 64.0          # 8000 * 12 / 1500
     assert q.transaction_type == "lease"
 
 
