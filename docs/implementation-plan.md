@@ -8,12 +8,13 @@
 
 **Tech Stack:** Python 3.11+, FastAPI 0.115.6, uvicorn, pydantic 2.10.4 / pydantic-settings 2.7.0, Jinja2, httpx 0.28.1, `anthropic==0.116.0` (needs `messages.parse`), `scrapling[fetchers,ai]==0.4.10`, `numpy` (cosine only), `openpyxl` (xlsx), SQLite FTS5 (stdlib), MapLibre GL (CDN).
 
-**Before Task 1:** several files are lifted verbatim from OpenProp, which lives in a
-different repo. Clone it as a **sibling directory** first, or the `cp ../fintok-projects/openprop/...`
-commands in Task 1 and Task 14 will not resolve:
+**Before Task 1:** several files are lifted verbatim from OpenProp, which is its own repo
+with the same root shape as this one (`app/`, `tests/`, `requirements.txt`). Clone it as a
+**sibling directory** first, or the `cp ../openprop/...` commands in Task 1 and Task 14
+will not resolve:
 
 ```bash
-cd .. && git clone https://github.com/dweng1572179/fintok-projects.git && cd openlease
+cd .. && git clone https://github.com/dweng1572179/openprop.git && cd openlease
 ```
 
 ## Global Constraints
@@ -115,16 +116,16 @@ in `.env` reads as truthy and no random key is ever generated).
 ```bash
 mkdir -p app/providers app/templates app/data/rail tests/fixtures
 touch app/__init__.py app/providers/__init__.py
-cp ../fintok-projects/openprop/app/cache.py app/cache.py
-cp ../fintok-projects/openprop/app/settings_store.py app/settings_store.py
-cp ../fintok-projects/openprop/app/routes_settings.py app/routes_settings.py
-cp ../fintok-projects/openprop/app/templates/settings.html app/templates/settings.html
-cp ../fintok-projects/openprop/app/templates/login.html app/templates/login.html
-cp "../fintok-projects/openprop/Start OpenProp.command" "Start OpenLease.command"
-cp "../fintok-projects/openprop/Start OpenProp.bat" "Start OpenLease.bat"
-cp "../fintok-projects/openprop/Stop OpenProp.command" "Stop OpenLease.command"
-cp "../fintok-projects/openprop/Stop OpenProp.bat" "Stop OpenLease.bat"
-cp ../fintok-projects/openprop/.dockerignore .dockerignore
+cp ../openprop/app/cache.py app/cache.py
+cp ../openprop/app/settings_store.py app/settings_store.py
+cp ../openprop/app/routes_settings.py app/routes_settings.py
+cp ../openprop/app/templates/settings.html app/templates/settings.html
+cp ../openprop/app/templates/login.html app/templates/login.html
+cp "../openprop/Start OpenProp.command" "Start OpenLease.command"
+cp "../openprop/Start OpenProp.bat" "Start OpenLease.bat"
+cp "../openprop/Stop OpenProp.command" "Stop OpenLease.command"
+cp "../openprop/Stop OpenProp.bat" "Stop OpenLease.bat"
+cp ../openprop/.dockerignore .dockerignore
 chmod +x "Start OpenLease.command" "Stop OpenLease.command"
 ```
 
@@ -326,7 +327,7 @@ and in `settings.html`, add the checkbox branch next to the existing select/secr
 
 - [ ] **Step 5: Write `app.py`**
 
-Identical in shape to `../fintok-projects/openprop/app/app.py` — same `_Redirect` exception handler, same
+Identical in shape to `../openprop/app/app.py` — same `_Redirect` exception handler, same
 `SessionMiddleware`, same startup hook — with OpenLease's names and route imports:
 
 ```python
@@ -5778,7 +5779,7 @@ cp .env.example .env          # set OPENLEASE_PASSWORD
 
 Docker: `docker compose up` → http://localhost:8788
 
-OpenLease runs on **8788**, so it and [OpenProp](https://github.com/dweng1572179/fintok-projects/tree/main/openprop) (8787) can run side by side.
+OpenLease runs on **8788**, so it and [OpenProp](https://github.com/dweng1572179/openprop) (8787) can run side by side.
 
 ## Where the listings come from
 
@@ -5851,7 +5852,7 @@ PolyForm Noncommercial 1.0.0 — see `LICENSE.md`. Use it for anything except se
 
 ```bash
 curl -sL https://polyformproject.org/licenses/noncommercial/1.0.0/ -o /dev/null
-cp ../fintok-projects/LICENSE.md LICENSE.md 2>/dev/null || \
+cp ../openprop/LICENSE.md LICENSE.md 2>/dev/null || \
   curl -sL https://raw.githubusercontent.com/polyformproject/polyform-licenses/master/PolyForm-Noncommercial-1.0.0.md \
   -o LICENSE.md
 head -3 LICENSE.md
@@ -5868,14 +5869,14 @@ listings come from → what each metro won't tell you).
 
 ```bash
 mkdir -p guide/assets
-cp ../fintok-projects/openprop/guide/assets/guide.css guide/assets/guide.css
-cp ../fintok-projects/openprop/guide/assets/fintok-logo.jpeg guide/assets/fintok-logo.jpeg
-cp ../fintok-projects/openprop/guide/build-pdf.sh guide/build-pdf.sh
+cp ../openprop/guide/assets/guide.css guide/assets/guide.css
+cp ../openprop/guide/assets/fintok-logo.jpeg guide/assets/fintok-logo.jpeg
+cp ../openprop/guide/build-pdf.sh guide/build-pdf.sh
 sed -i '' 's/OpenProp/OpenLease/g; s/openprop/openlease/g' guide/build-pdf.sh
 chmod +x guide/build-pdf.sh
 ```
 
-Write `guide/OpenLease-Setup-Guide.html` following `../fintok-projects/openprop/guide/OpenProp-Setup-Guide.html`
+Write `guide/OpenLease-Setup-Guide.html` following `../openprop/guide/OpenProp-Setup-Guide.html`
 section-for-section, with these substitutions: port 8788, `OPENLEASE_PASSWORD`, the keyless
 table from the README, the three supplies (government / CSV / crawler), and a **"What the
 crawler will not do"** section carrying the never-authenticate and facts-not-expression
@@ -5887,16 +5888,13 @@ cd guide && ./build-pdf.sh && ls -la *.pdf
 
 Expected: `OpenLease-Setup-Guide.pdf` exists.
 
-- [ ] **Step 4: Cross-link from the fintok-projects README**
+- [ ] **Step 4: Cross-link from the OpenProp README**
 
-OpenLease is its own repo, but OpenProp's readers should be able to find it. In the
-**fintok-projects** checkout, add a one-paragraph entry beside OpenProp — what it is (the
-open SpaceFinder), the four metros, keyless-first, port 8788 — linking to
-`https://github.com/dweng1572179/openlease`. Commit and push that repo separately.
-
-```bash
-(cd ../fintok-projects && grep -n "openprop" README.md | head -5)
-```
+OpenLease is its own repo, but OpenProp's readers should be able to find it (same author,
+same architecture, adjacent domain). In the **openprop** checkout, add a short "sibling
+project" line — what OpenLease is (the open SpaceFinder), the four metros, keyless-first,
+port 8788 — linking to `https://github.com/dweng1572179/openlease`. Commit and push that
+repo separately.
 
 - [ ] **Step 5: Full verification pass**
 
