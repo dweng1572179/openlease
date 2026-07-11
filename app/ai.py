@@ -5,18 +5,41 @@ With no key, `nl_to_query` falls back to a rules parser and `reply` to a determi
 summary, so search still works — but the fallback understands FAR less of the query, so
 it is LOUDLY logged. (A silent fallback hid a 400 for OpenProp's entire life and made
 every AI search quietly drop half the user's constraints while still looking like it
-worked.)"""
+worked.)
+
+Both paid calls (`nl_to_query`'s `messages.parse`, `reply`'s `messages.create`) route
+through `cache.cached()` — the only paid surfaces in the app, so this is the only place the
+monthly budget cap (spec §6, §8) can be enforced. A refused-by-budget call is exactly
+another degraded-mode fallback: it is LOUDLY logged, same as a parse failure."""
 import logging
 import re
 
 from pydantic import BaseModel
 
+from . import cache
 from .config import settings
 from .models import METROS, ListingQuery
 
 log = logging.getLogger("openlease")
 
 _TYPES = ("retail", "office", "industrial", "flex", "land")
+_BBOX_FIELDS = ("min_lat", "max_lat", "min_lng", "max_lng")
+
+# Anthropic pricing for the default `llm_model` (claude-opus-4-8): $5/1M input tokens,
+# $25/1M output tokens (i.e. $0.0005c/input-tok, $0.0025c/output-tok).
+#
+# nl_to_query (messages.parse, max_tokens=1024): system prompt (~250 tok) + the QueryExtract
+# schema definition sent with the request (~200 tok) + an optional prior-turn JSON blob on
+# follow-ups (~100 tok) + the user's message (~50-150 tok) -> ~600-700 input tokens. The
+# parsed-JSON output is normally 150-250 tokens (well under the 1024 cap).
+#   ~700 * 0.0005c + ~250 * 0.0025c = 0.35c + 0.625c =~ 1c -> rounded up to 2c for headroom.
+_PARSE_COST_CENTS = 2
+
+# reply (messages.create, max_tokens=600): system prompt (~150 tok) + up to 8 listings'
+# facts (~150 tok) + the user's message (~50 tok) -> ~350 input tokens. The reply is 2-3
+# sentences plus 3 suggestions, normally 150-300 tokens (well under the 600 cap).
+#   ~350 * 0.0005c + ~250 * 0.0025c = 0.175c + 0.625c =~ 1c -> rounded up to 2c for headroom.
+_REPLY_COST_CENTS = 2
 
 
 class QueryExtract(BaseModel):
@@ -48,10 +71,36 @@ class QueryExtract(BaseModel):
     exclude_cities: list[str]
     keywords: list[str]            # free-text terms for BM25 (e.g. "corner", "loading dock")
 
-    def to_query(self) -> ListingQuery:
-        """Sentinels -> absent, so unmentioned fields never become real filters."""
-        d = {k: v for k, v in self.model_dump().items() if v not in ("", 0, 0.0, [])}
-        d.setdefault("transaction_type", "lease")
+    def to_query(self, *, default_transaction_type: str = "lease") -> ListingQuery:
+        """Sentinels -> absent, so unmentioned fields never become real filters.
+
+        Two fields get special handling instead of the flat per-field drop below:
+
+        - The four bbox fields are ATOMIC: a real bounding box needs all four corners, so if
+          even one is still at its 0/0.0 sentinel the WHOLE group is dropped. A partial bbox
+          (e.g. a real minLat/maxLat/maxLng next to a sentinel minLng=0) is a geographically
+          nonsensical filter that looks like it worked — worse than no bbox at all.
+        - transaction_type resolves to `default_transaction_type` here rather than being
+          dropped by the flat filter below. `nl_to_query` passes "" (not "lease") whenever
+          there's a PRIOR turn to merge against, so the "unstated" sentinel survives into
+          `_merge()` instead of being baked into a concrete "lease" before `_merge()` can
+          tell "the user restated lease" apart from "the user didn't mention it" — which
+          would otherwise silently flip a prior 'sale' search back to 'lease' on any
+          follow-up that doesn't repeat the word.
+        """
+        dumped = self.model_dump()
+        has_full_bbox = all(dumped[f] not in (0, 0.0) for f in _BBOX_FIELDS)
+        # NOTE: `v not in (...)` uses `==`, and `False == 0` is True in Python — a bool field
+        # added to this schema later would be silently dropped whenever it's False. No bool
+        # fields exist today; if one is added, guard this with `type(v) is not bool and ...`.
+        d = {
+            k: v for k, v in dumped.items()
+            if k not in _BBOX_FIELDS and k != "transaction_type"
+            and v not in ("", 0, 0.0, [])
+        }
+        if has_full_bbox:
+            d.update({f: dumped[f] for f in _BBOX_FIELDS})
+        d["transaction_type"] = self.transaction_type or default_transaction_type
         return ListingQuery(**d)
 
 
@@ -92,13 +141,30 @@ Rules:
 def nl_to_query(message: str, prior_state: dict | None, metro: str) -> ListingQuery:
     """Parse `message` into filters. `prior_state` carries the PRIOR turn's mustHaves
     (camelCase, off the wire) so a follow-up refines instead of restarting: 'make it
-    bigger, drop the rent cap' has to know what 'it' was."""
+    bigger, drop the rent cap' has to know what 'it' was.
+
+    The `messages.parse` call is the paid step, so it goes through `cache.cached()` —
+    identical repeated queries never re-bill, and a paid call past the monthly cap raises
+    `BudgetExceeded` instead of silently spending. Either that or any other parse/API
+    failure degrades to the rules parser, loudly logged (never silently)."""
     prior = ListingQuery(**prior_state) if prior_state else None
+    # A fresh, no-prior search resolves an unstated transactionType to "lease" right here
+    # (SpaceFinder's own default). A follow-up turn instead passes "" through unresolved, so
+    # _merge() below can tell "the new turn restated lease" apart from "the new turn didn't
+    # mention it" and keep the prior turn's own transaction_type (e.g. "sale") intact.
+    default_txn = "" if prior else "lease"
     if not available():
-        q = _rules_parse(message, metro)
+        q = _rules_parse(message, metro, default_transaction_type=default_txn)
         return _merge(prior, q) if prior else q
     m = METROS.get(metro, {})
-    try:
+    req = {
+        "message": message,
+        "metro": metro,
+        "prior": prior.model_dump(by_alias=True) if prior else None,
+        "model": settings.llm_model,
+    }
+
+    def fetch():
         resp = _client().messages.parse(
             model=settings.llm_model, max_tokens=1024,
             system=_SYSTEM.format(metro_name=m.get("name", metro), bbox=m.get("bbox")),
@@ -109,31 +175,48 @@ def nl_to_query(message: str, prior_state: dict | None, metro: str) -> ListingQu
             ],
             output_format=QueryExtract,
         )
-        q = resp.parsed_output.to_query()
+        return resp.parsed_output.model_dump()
+
+    try:
+        extracted = cache.cached("anthropic", "messages.parse", req, fetch, cost_cents=_PARSE_COST_CENTS)
+        q = QueryExtract(**extracted).to_query(default_transaction_type=default_txn)
         return _merge(prior, q) if prior else q
+    except cache.BudgetExceeded as e:
+        log.warning(
+            "AI query extraction skipped — monthly paid-spend cap reached (%s); falling "
+            "back to the rules parser, which understands far less of the query.", e
+        )
     except Exception as e:  # noqa: BLE001 — any parse/API failure degrades to rules
         log.warning(
             "AI query extraction failed (%s) — falling back to the rules parser, which "
             "understands far less of the query: %s", type(e).__name__, e
         )
-        q = _rules_parse(message, metro)
-        return _merge(prior, q) if prior else q
+    q = _rules_parse(message, metro, default_transaction_type=default_txn)
+    return _merge(prior, q) if prior else q
 
 
 def _merge(prior: ListingQuery, new: ListingQuery) -> ListingQuery:
     """Follow-up refinement: the new turn's stated fields win; unstated fields keep the
-    prior turn's value. (Sentinels already mean 'unstated', so this is a dict update.)"""
+    prior turn's value. Sentinels mean 'unstated' for every field, including
+    transaction_type — nl_to_query passes default_transaction_type="" (instead of resolving
+    to "lease" before this runs) specifically so this dict update sees a real sentinel here
+    too, not a concrete "lease" that would silently overwrite a prior 'sale' search."""
     base = prior.model_dump()
     for k, v in new.model_dump().items():
-        if v not in ("", 0, 0.0, []) or (k == "transaction_type" and v):
+        if v not in ("", 0, 0.0, []):
             base[k] = v
     return ListingQuery(**base)
 
 
-def _rules_parse(message: str, metro: str) -> ListingQuery:
-    """Keyword fallback — covers the common tenant-rep phrasings. Deliberately dumb."""
+def _rules_parse(message: str, metro: str, *, default_transaction_type: str = "lease") -> ListingQuery:
+    """Keyword fallback — covers the common tenant-rep phrasings. Deliberately dumb.
+
+    `default_transaction_type` is what "the message didn't mention it" resolves to. A fresh
+    search (no prior turn — see nl_to_query) defaults to "lease". A follow-up turn passes ""
+    instead, so the unstated sentinel survives into `_merge()` rather than silently flipping
+    a prior 'sale' search back to 'lease'."""
     q = message.lower()
-    out = ListingQuery()
+    out = ListingQuery(transaction_type=default_transaction_type)
     out.property_types = [t for t in _TYPES if t in q]
     if "for sale" in q or "buy" in q or "purchase" in q:
         out.transaction_type = "sale"
@@ -191,7 +274,12 @@ def reply(message: str, q: ListingQuery, results: list[dict], is_near_miss: bool
         f"${r.get('askingRent')} {r.get('rentUnit')} | {r.get('rationale')}"
         for r in results[:8]
     )
-    try:
+    req = {
+        "message": message, "is_near_miss": is_near_miss, "facts": facts,
+        "model": settings.llm_model,
+    }
+
+    def fetch():
         resp = _client().messages.create(
             model=settings.llm_model, max_tokens=600,
             system=("You are a commercial leasing broker replying to a tenant rep. In 2-3 "
@@ -206,16 +294,25 @@ def reply(message: str, q: ListingQuery, results: list[dict], is_near_miss: bool
         text = next((b.text for b in resp.content if b.type == "text"), "")
         lines = [ln[2:].strip() for ln in text.splitlines() if ln.startswith("- ")]
         body = "\n".join(ln for ln in text.splitlines() if not ln.startswith("- ")).strip()
-        return body, lines[:3]
+        return {"body": body, "lines": lines[:3]}
+
+    try:
+        out = cache.cached("anthropic", "messages.create", req, fetch, cost_cents=_REPLY_COST_CENTS)
+        return out["body"], out["lines"]
+    except cache.BudgetExceeded as e:
+        log.warning(
+            "AI reply skipped — monthly paid-spend cap reached (%s); returning the "
+            "deterministic summary.", e
+        )
     except Exception as e:  # noqa: BLE001
         log.warning("AI reply failed (%s) — returning the deterministic summary: %s",
                     type(e).__name__, e)
-        settings_backup = settings.anthropic_api_key
-        try:
-            settings.anthropic_api_key = ""      # force the keyless branch, once
-            return reply(message, q, results, is_near_miss)
-        finally:
-            settings.anthropic_api_key = settings_backup
+    settings_backup = settings.anthropic_api_key
+    try:
+        settings.anthropic_api_key = ""      # force the keyless branch, once
+        return reply(message, q, results, is_near_miss)
+    finally:
+        settings.anthropic_api_key = settings_backup
 
 
 def demo() -> None:
