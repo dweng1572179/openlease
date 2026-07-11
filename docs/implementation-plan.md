@@ -1595,11 +1595,13 @@ def test_rrf_single_list_is_order_preserving():
 
 
 def test_rrf_fuses_two_lists():
-    # 9 is #2 in both lists; 7 is #1 in one and last in the other. Fusion rewards
-    # consistent agreement, which a weighted sum of incomparable scales cannot.
-    fused = [i for i, _ in rank.rrf([[7, 9, 3], [3, 9, 7]])]
-    assert fused[0] in (3, 9) and set(fused) == {3, 7, 9}
-    scores = dict(rank.rrf([[7, 9, 3], [3, 9, 7]]))
+    # 9 sits at rank 2 in BOTH lists; 7 is rank 1 in one list but ABSENT from the
+    # other (a list that never surfaced a candidate contributes nothing for it).
+    # Agreement across lists beats a single list's top spot — a plain weighted sum
+    # over one incomparable scale cannot express that.
+    fused = [i for i, _ in rank.rrf([[7, 9, 3], [9, 3]])]
+    assert fused[0] == 9 and set(fused) == {3, 7, 9}, fused
+    scores = dict(rank.rrf([[7, 9, 3], [9, 3]]))
     assert scores[9] > scores[7]
 
 

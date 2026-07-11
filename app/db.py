@@ -62,6 +62,27 @@ CREATE TABLE IF NOT EXISTS parcel (
     raw_json    TEXT,
     fetched_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- External-content FTS5: the text lives once, in `listing`. Triggers keep the index in
+-- sync so a re-crawl's upsert (save_listing) reindexes automatically.
+CREATE VIRTUAL TABLE IF NOT EXISTS listing_fts USING fts5(
+    address, our_description, neighborhood,
+    content='listing', content_rowid='id', tokenize='porter unicode61'
+);
+CREATE TRIGGER IF NOT EXISTS listing_fts_ai AFTER INSERT ON listing BEGIN
+    INSERT INTO listing_fts(rowid, address, our_description, neighborhood)
+    VALUES (new.id, new.address, new.our_description, new.neighborhood);
+END;
+CREATE TRIGGER IF NOT EXISTS listing_fts_ad AFTER DELETE ON listing BEGIN
+    INSERT INTO listing_fts(listing_fts, rowid, address, our_description, neighborhood)
+    VALUES ('delete', old.id, old.address, old.our_description, old.neighborhood);
+END;
+CREATE TRIGGER IF NOT EXISTS listing_fts_au AFTER UPDATE ON listing BEGIN
+    INSERT INTO listing_fts(listing_fts, rowid, address, our_description, neighborhood)
+    VALUES ('delete', old.id, old.address, old.our_description, old.neighborhood);
+    INSERT INTO listing_fts(rowid, address, our_description, neighborhood)
+    VALUES (new.id, new.address, new.our_description, new.neighborhood);
+END;
 """
 
 
