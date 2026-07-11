@@ -43,7 +43,7 @@ def _status() -> list[dict]:
 
 def _ctx(request: Request, saved: bool = False) -> dict:
     return {
-        "request": request, "fields": _fields_ctx(), "status": _status(), "saved": saved,
+        "fields": _fields_ctx(), "status": _status(), "saved": saved,
         "spend_cents": spend_this_month(), "budget_cents": settings.monthly_budget_cents,
         "remaining_cents": budget_remaining_cents(),
     }
