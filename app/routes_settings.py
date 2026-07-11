@@ -51,7 +51,7 @@ def _ctx(request: Request, saved: bool = False) -> dict:
 
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request, _=Depends(require_auth)):
-    return templates.TemplateResponse("settings.html", _ctx(request))
+    return templates.TemplateResponse(request, "settings.html", _ctx(request))
 
 
 @app.post("/settings", response_class=HTMLResponse)
@@ -67,4 +67,4 @@ async def settings_save(request: Request, _=Depends(require_auth)):
         elif v:
             updates[name] = v
     settings_store.save(updates)
-    return templates.TemplateResponse("settings.html", _ctx(request, saved=True))
+    return templates.TemplateResponse(request, "settings.html", _ctx(request, saved=True))

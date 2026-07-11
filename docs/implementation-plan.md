@@ -102,7 +102,8 @@ password-gated home page on :8788 while OpenProp still runs on :8787.
 - Create: `app/__init__.py`, `app/config.py`, `app/db.py`, `app/cache.py`, `app/settings_store.py`, `app/app.py`, `app/routes_settings.py`
 - Create: `app/templates/base.html`, `login.html`, `home.html`, `settings.html`
 - Create: `requirements.txt`, `run.sh`, `Dockerfile`, `docker-compose.yml`, `.env.example`, `.gitignore`, `.dockerignore`, `Start OpenLease.command`, `Start OpenLease.bat`, `Stop OpenLease.command`, `Stop OpenLease.bat`
-- Test: `tests/test_smoke.py`
+- Test: `tests/conftest.py`, `tests/test_smoke.py`, `tests/test_cache.py`, `tests/test_config.py`,
+  `tests/test_settings_store.py`
 
 **Interfaces:**
 - Produces: `config.settings` (a `Settings` instance); `db.get_conn()` (contextmanager yielding a `sqlite3.Connection` with `row_factory=sqlite3.Row`), `db.init_db()`, `db.SCHEMA` (a `str`, grown by later tasks); `cache.cached(provider, endpoint, req: dict, fetch: Callable, cost_cents: int = 0)`, `cache.BudgetExceeded`, `cache.spend_this_month() -> int`, `cache.budget_remaining_cents() -> int`; `app.app` (the `FastAPI`), `app.require_auth` (a dependency), `app.templates` (a `Jinja2Templates`); `settings_store.FIELDS`, `settings_store.save(updates: dict) -> None`, `settings_store.load_overrides() -> None`.
@@ -142,6 +143,38 @@ sed -i '' 's/openprop/openlease/g; s/OpenProp/OpenLease/g; s/OPENPROP/OPENLEASE/
 
 `cache.py` needs no further edit — it is domain-agnostic. `settings_store.py` and
 `routes_settings.py` get their field lists replaced in Step 4.
+
+> **Correction (Task 1 review):** the `sed` above is not sufficient for `login.html` and
+> `settings.html`. Two things it cannot catch:
+> 1. **The brand name is split across markup** — `login.html`'s hero renders
+>    `Open<span class="text-emerald-600">Prop</span>`. `sed 's/OpenProp/OpenLease/g'` needs
+>    the literal substring `OpenProp` on one line; it can't match across a `<span>` tag
+>    boundary, so this line silently survives the rename untouched. After the `sed` pass,
+>    manually fix it to match `base.html`'s (correct) brand markup —
+>    `Open<span class="text-sky-600">Lease</span>` — and rewrite the tagline for CRE leasing
+>    (OpenProp's copied-verbatim tagline is "Self-hosted property intelligence.", which is
+>    the wrong domain for this app).
+> 2. **OpenProp's brand color (`emerald`) is not `OpenLease`'s.** `base.html` (Step 6, written
+>    fresh for this app, not lifted) uses `sky` for the brand accent, links, and buttons.
+>    `login.html` and `settings.html` are lifted from OpenProp and keep every `emerald-*`
+>    Tailwind class as-is — `sed` has no rule for it because "emerald" isn't an
+>    OpenProp/OpenLease name collision, it's a color choice. After the rename pass, grep both
+>    files for `emerald` and replace every occurrence with the matching `sky` shade
+>    (`emerald-600`→`sky-600`, `emerald-500`→`sky-500`, `emerald-700`→`sky-700`,
+>    `emerald-200`/`emerald-50`/`emerald-800`→`sky-200`/`sky-50`/`sky-800`) so the two lifted
+>    pages match the rest of the app.
+>
+> Also lifted in this step: `Stop OpenLease.command` / `Stop OpenLease.bat`. Their `pkill -f
+> "uvicorn app.app:app"` / `taskkill /f /im uvicorn.exe` match **OpenProp's own process too**
+> — it runs the identical module path — which defeats the entire point of giving OpenLease
+> its own port (8788, so both apps run at once; see `.env.example`). `sed`'s
+> `8787`→`8788` substitution does not touch these two files at all (their process-kill
+> commands never mention a port number, only the module path / binary name). Rewrite both to
+> kill by the port they actually own instead of by module path:
+> - `Stop OpenLease.command`: `lsof -ti ":${OPENLEASE_PORT:-8788}"` piped to `kill`, not
+>   `pkill -f "uvicorn app.app:app"`.
+> - `Stop OpenLease.bat`: find the PID bound to `%OPENLEASE_PORT%` via `netstat -ano` +
+>   `findstr`, then `taskkill /f /pid`, not `taskkill /f /im uvicorn.exe`.
 
 - [ ] **Step 2: Write `config.py`**
 
@@ -255,7 +288,40 @@ def init_db() -> None:
 
 In `app/settings_store.py`, replace the whole `FIELDS` list with OpenLease's
 (everything else in the file — `_apply`, `load_overrides`, `save`, `SECRETS` — stays as
-lifted):
+lifted, **except** `save()`'s `registry.reset()` call — see the correction below):
+
+> **Correction (Task 1 review):** "stays as lifted" is wrong for one line. OpenProp's
+> `save()` ends with an unconditional `registry.reset()` — correct there, because
+> `registry.py` already exists in OpenProp. In OpenLease, `registry.py` doesn't land until
+> Task 7, so left unconditional, `save()` raises on the very first `POST /settings`: a user
+> pastes an API key and clicking Save 500s, and the key is never applied. The DB write above
+> `registry.reset()` is the part that actually matters here (the key must save and apply even
+> before providers exist) — `registry.reset()` is only provider-instance cache invalidation,
+> and there are no provider instances yet. Make the reset conditional on `registry.py`
+> existing, and **log the skip at WARNING**, naming exactly what didn't run and why (this
+> codebase's hard rule: every fallback is loud, never a silent swallow — a silent fallback
+> hid a 400 for OpenProp's entire life). Use `importlib.import_module(".registry",
+> __package__)` rather than `from . import registry` — the latter collapses a genuinely
+> missing submodule into a plain `ImportError` with no reliable `.name` to check, so a real
+> bug inside a future `registry.py` would get silently swallowed right along with the
+> expected Task-1 gap:
+> ```python
+> import importlib
+> ...
+> def save(updates: dict[str, str]) -> None:
+>     ...  # DB write + _apply(), unchanged
+>     try:
+>         registry = importlib.import_module(".registry", __package__)
+>     except ModuleNotFoundError as exc:
+>         if exc.name != f"{__package__}.registry":
+>             raise
+>         logger.warning(
+>             "settings_store.save(): skipped registry.reset() — app/registry.py does not "
+>             "exist yet (lands in Task 7); settings were saved and applied normally."
+>         )
+>     else:
+>         registry.reset()
+> ```
 
 ```python
 # (name, label, kind) — kind: "secret" | "text" | "int" | "bool"
@@ -325,6 +391,11 @@ and in `settings.html`, add the checkbox branch next to the existing select/secr
                  class="h-4 w-4 rounded border-slate-300">
 ```
 
+`routes_settings.py`'s two `TemplateResponse` calls (`settings_page`, `settings_save`) take the
+same new-signature fix as `app.py`'s (see the Step 5 correction below):
+`templates.TemplateResponse(request, "settings.html", _ctx(request))`, with `request` passed
+positionally rather than embedded in `_ctx()`'s context dict.
+
 - [ ] **Step 5: Write `app.py`**
 
 Identical in shape to `../openprop/app/app.py` — same `_Redirect` exception handler, same
@@ -334,6 +405,7 @@ Identical in shape to `../openprop/app/app.py` — same `_Redirect` exception ha
 """FastAPI app: single service, single user. Routes stay thin — data access in db.py,
 provider calls behind registry.py. Auth is one password + a signed session cookie."""
 import secrets
+from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -344,7 +416,16 @@ from .cache import budget_remaining_cents, spend_this_month
 from .config import settings
 from .db import init_db
 
-app = FastAPI(title="OpenLease")
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    init_db()
+    from . import settings_store
+    settings_store.load_overrides()
+    yield
+
+
+app = FastAPI(title="OpenLease", lifespan=_lifespan)
 
 _secret = settings.secret_key or secrets.token_hex(32)
 if not settings.secret_key:
@@ -359,13 +440,6 @@ app.add_middleware(
 )
 
 templates = Jinja2Templates(directory="app/templates")
-
-
-@app.on_event("startup")
-def _startup():
-    init_db()
-    from . import settings_store
-    settings_store.load_overrides()
 
 
 # --- auth --------------------------------------------------------------------
@@ -389,7 +463,7 @@ async def _redirect_handler(request: Request, exc: _Redirect):
 
 @app.get("/login", response_class=HTMLResponse)
 def login_form(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+    return templates.TemplateResponse(request, "login.html", {"error": None})
 
 
 @app.post("/login")
@@ -398,7 +472,7 @@ def login(request: Request, password: str = Form(...)):
         request.session["auth"] = True
         return RedirectResponse("/", status_code=303)
     return templates.TemplateResponse(
-        "login.html", {"request": request, "error": "Wrong password."}, status_code=401
+        request, "login.html", {"error": "Wrong password."}, status_code=401
     )
 
 
@@ -421,13 +495,24 @@ def spend_ctx() -> dict:
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request, _=Depends(require_auth)):
     return templates.TemplateResponse(
-        "home.html", {"request": request, "metro": "nyc", **spend_ctx()}
+        request, "home.html", {"metro": "nyc", **spend_ctx()}
     )
 
 
 # Feature routes attach to `app` here as each task lands:
 from . import routes_settings   # noqa: E402,F401  (T1)
 ```
+
+> **Correction (Task 1 review):** OpenProp's `app.py` used `@app.on_event("startup")` and the
+> old-style `TemplateResponse(name, {"request": request, ...})` call signature. Both are
+> deprecated in the FastAPI/Starlette versions this plan pins (`fastapi==0.115.6` triggers the
+> `on_event` `DeprecationWarning`; the installed `starlette` triggers the `TemplateResponse`
+> one) — copying them verbatim makes every test run emit 5 standing warnings, which would mask
+> a real new warning in any of the next 13 tasks. Fixed in the block above: a `@asynccontextmanager`
+> `_lifespan` passed to `FastAPI(..., lifespan=_lifespan)` replaces `@app.on_event("startup")`,
+> and every `TemplateResponse` call takes `request` as its first positional argument with
+> `request` dropped from the context dict (`routes_settings.py`'s two `TemplateResponse` calls
+> in Step 4 get the identical fix). Verified: `pytest -v` after this fix reports `0 warnings`.
 
 - [ ] **Step 6: Write `templates/base.html` and a placeholder `home.html`**
 
@@ -610,36 +695,73 @@ CRAWL_DAILY_CAP_PER_DOMAIN=500
 
 # --- cost guardrails ---
 MONTHLY_BUDGET_CENTS=1000         # hard cap on paid spend per calendar month
-DB_PATH=openlease.db
+
+# DB_PATH is deliberately NOT set here. config.py's own default (./openlease.db) is right
+# for `./run.sh` (local). In Docker, docker-compose.yml loads this whole file via
+# `env_file: .env`, and env_file entries OVERRIDE the image's `ENV DB_PATH=/app/data/openlease.db`
+# (Dockerfile) -- so an active DB_PATH= line here would silently redirect the DB outside the
+# `openlease-data` volume and it would be destroyed on every `docker compose down`. If you need
+# a custom path for local (non-Docker) use, uncomment and set an absolute path:
+# DB_PATH=openlease.db
 
 # --- server ---
 OPENLEASE_PORT=8788               # OpenProp holds 8787; both can run at once
 ```
 
-- [ ] **Step 8: Write the failing smoke test**
+> **Correction (Task 1 review):** the brief originally shipped an active `DB_PATH=openlease.db`
+> line here. `docker-compose.yml`'s `env_file: .env` loads this file into the container and
+> **overrides** the Dockerfile's `ENV DB_PATH=/app/data/openlease.db` whenever the loaded file
+> actually sets `DB_PATH` — Compose's documented precedence is `env_file` above the image's
+> `ENV`. With the line active, `cp .env.example .env && docker compose up` (the documented
+> path) writes SQLite to `/app/openlease.db`, **outside** the `openlease-data` volume mounted
+> at `/app/data` — the DB is destroyed on every `docker compose down && up`, contradicting the
+> Dockerfile's own "listings + cache survive restarts" comment. Commenting the line out (with
+> the explanation above) is the fix: `config.py`'s default wins locally, the Dockerfile's `ENV`
+> wins in Docker, and both paths persist correctly. Verified: `.venv/bin/python -c
+> "from app.config import Settings; print(Settings(_env_file=None).db_path)"` with a `.env`
+> built from the corrected example prints `openlease.db`, matching the local default; Docker
+> itself was not available in the Task-1-fix environment to run `docker compose up` end to end
+> (see the Task 1 fix report), so the container side is verified by inspection of Compose's
+> documented `env_file`-vs-`ENV` precedence, not by a live run.
+
+- [ ] **Step 8: Write the failing smoke test — and the load-bearing unit tests**
+
+`tests/conftest.py` — shared bootstrap. `app.config.settings` is a process-wide singleton
+created on the *first* import of `app.config`, from whichever test module pytest collects
+first (alphabetical by default). Putting the env bootstrap in `conftest.py` — which pytest
+always imports before any test file in its directory — is what guarantees every test file
+sees the same base settings regardless of collection order; a per-file bootstrap (as an
+earlier draft of this plan had, duplicated at the top of `test_smoke.py`) breaks the moment
+a second test file is added and happens to collect first:
+
+```python
+import os
+import tempfile
+
+_DB = os.path.join(tempfile.gettempdir(), "openlease_tests.db")
+os.environ["DB_PATH"] = _DB
+os.environ["OPENLEASE_PASSWORD"] = "test-pw"
+for _k in ("ANTHROPIC_API_KEY", "VOYAGE_API_KEY", "GOOGLE_MAPS_KEY"):
+    os.environ[_k] = ""
+for _ext in ("", "-wal", "-shm"):  # fresh DB -> stable state across runs
+    try:
+        os.remove(_DB + _ext)
+    except FileNotFoundError:
+        pass
+```
 
 `tests/test_smoke.py`:
 
 ```python
 """End-to-end smoke test: app boots, auth gates, settings renders. Keyless.
-Run: `python -m pytest tests/test_smoke.py -v` from openlease/."""
-import os
-import tempfile
+Run: `python -m pytest tests/test_smoke.py -v` from openlease/.
 
-_DB = os.path.join(tempfile.gettempdir(), "openlease_smoke.db")
-os.environ["DB_PATH"] = _DB
-os.environ["OPENLEASE_PASSWORD"] = "test-pw"
-for _k in ("ANTHROPIC_API_KEY", "VOYAGE_API_KEY", "GOOGLE_MAPS_KEY"):
-    os.environ[_k] = ""
-for _ext in ("", "-wal", "-shm"):  # fresh DB -> the id-1 assumption holds every run
-    try:
-        os.remove(_DB + _ext)
-    except FileNotFoundError:
-        pass
+Shared env bootstrap (DB_PATH, OPENLEASE_PASSWORD, blank keys) lives in tests/conftest.py —
+it has to run before `app.config`'s process-wide `settings` singleton is first created,
+which can happen via any test module pytest collects first, not necessarily this one."""
+from fastapi.testclient import TestClient
 
-from fastapi.testclient import TestClient  # noqa: E402
-
-from app.app import app  # noqa: E402
+from app.app import app
 
 
 def test_auth_and_settings():
@@ -657,23 +779,37 @@ def test_auth_and_settings():
         assert r.status_code == 200 and "ANTHROPIC_API_KEY" in r.text, r.text[:300]
 ```
 
+`tests/test_cache.py`, `tests/test_config.py`, `tests/test_settings_store.py` — the smoke test
+alone only exercises auth + page rendering. Three behaviors this file's own Interfaces section
+calls load-bearing had no automated test until a Task 1 review caught the gap: `cache.cached()`'s
+monthly budget cap (a paid miss over budget raises `BudgetExceeded`; a cache **hit** is never
+refused, even over budget — "you never pay twice"); `config.py`'s `_drop_inline_comment` guard
+(a `.env` value of `SECRET_KEY=  # note` must not read as truthy); and
+`settings_store.load_overrides()` (a DB `setting` row must override whatever `.env` set). See
+the three test files for the full cases — each isolates its own scratch DB via the `monkeypatch`
+fixture (`monkeypatch.setattr(settings, "db_path", ...)`) so tests can't leak state into each
+other regardless of run order.
+
 - [ ] **Step 9: Run it — expect failure**
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt
-.venv/bin/python -m pytest tests/test_smoke.py -v
+.venv/bin/python -m pytest tests/ -v
 ```
 
 Expected on first run: FAIL — `ModuleNotFoundError` or a missing template, until every file
 above exists. Iterate until it passes.
 
-- [ ] **Step 10: Run the config self-check and the smoke test**
+- [ ] **Step 10: Run the config self-check and the full test suite**
 
 ```bash
-.venv/bin/python -m app.config && .venv/bin/python -m pytest tests/test_smoke.py -v
+.venv/bin/python -m app.config && .venv/bin/python -m pytest tests/ -v
 ```
 
-Expected: `config ok — inline comments dropped, real values preserved` then `1 passed`.
+Expected: `config ok — inline comments dropped, real values preserved` then `9 passed` with
+**no warnings** (`@app.on_event`/old-style `TemplateResponse` calls, both deprecated, would
+otherwise print 5 `DeprecationWarning`s here — fixed in Step 5's `app.py` and in
+`routes_settings.py`; see the Step 5 correction).
 
 - [ ] **Step 11: Verify both apps run side by side**
 

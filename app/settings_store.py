@@ -2,8 +2,13 @@
 .env + restarting. DB `setting` rows override the .env-loaded `settings` object
 live; saving rebuilds the provider registry so new keys take effect immediately.
 Precedence: DB override > .env > default."""
+import importlib
+import logging
+
 from .config import settings
 from .db import get_conn
+
+logger = logging.getLogger(__name__)
 
 # (name, label, kind) — kind: "secret" | "text" | "int" | "bool"
 FIELDS = [
@@ -41,8 +46,14 @@ def load_overrides() -> None:
 
 
 def save(updates: dict[str, str]) -> None:
-    """Persist + apply updates, then rebuild providers so keys take effect now."""
-    from . import registry
+    """Persist + apply updates, then rebuild providers so keys take effect now.
+
+    `registry.reset()` only invalidates cached provider *instances* built with the old
+    keys — it does not touch the DB write above, which is the part that actually matters
+    (a pasted key must be saved and applied even before providers exist). `app/registry.py`
+    doesn't land until Task 7, so until then this is a no-op — loudly logged, never a
+    silent swallow, per this codebase's hard rule (a silent fallback hid a 400 for
+    OpenProp's entire life)."""
     with get_conn() as conn:
         for name, value in updates.items():
             conn.execute(
@@ -52,4 +63,20 @@ def save(updates: dict[str, str]) -> None:
             )
     for name, value in updates.items():
         _apply(name, str(value))
-    registry.reset()  # drop cached provider instances built with the old keys
+    try:
+        # importlib.import_module (not `from . import registry`) so a genuinely missing
+        # submodule raises ModuleNotFoundError with an exact `.name` we can check — a bare
+        # `from . import registry` collapses a missing submodule into a plain ImportError
+        # with no reliable way to tell it apart from a real bug inside registry.py.
+        registry = importlib.import_module(".registry", __package__)
+    except ModuleNotFoundError as exc:
+        if exc.name != f"{__package__}.registry":
+            raise  # a *different* missing import inside registry.py — a real bug, don't hide it
+        logger.warning(
+            "settings_store.save(): skipped registry.reset() — app/registry.py does not exist "
+            "yet (lands in Task 7). Settings were saved to the DB and applied to `settings` "
+            "normally; only the provider-instance cache invalidation was skipped, and there "
+            "are no provider instances to invalidate yet."
+        )
+    else:
+        registry.reset()  # drop cached provider instances built with the old keys

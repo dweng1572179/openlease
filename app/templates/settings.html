@@ -3,11 +3,11 @@
 {% block content %}
 <div class="flex items-center justify-between mb-4">
   <h1 class="text-2xl font-semibold tracking-tight">Settings</h1>
-  <a href="/" class="text-sm text-emerald-600 hover:underline">← dashboard</a>
+  <a href="/" class="text-sm text-sky-600 hover:underline">← dashboard</a>
 </div>
 
 {% if saved %}
-<div class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">
+<div class="mb-4 rounded-lg border border-sky-200 bg-sky-50 px-4 py-2 text-sm text-sky-800">
   Saved — new keys are live, no restart needed.
 </div>
 {% endif %}
@@ -39,7 +39,7 @@
       {% endif %}
     </label>
     {% endfor %}
-    <button class="w-full rounded-lg bg-emerald-600 px-3 py-2 text-white font-medium hover:bg-emerald-700">
+    <button class="w-full rounded-lg bg-sky-600 px-3 py-2 text-white font-medium hover:bg-sky-700">
       Save
     </button>
     <p class="text-xs text-slate-400">Stored locally in your SQLite DB (same as <code>.env</code>, plaintext).</p>
@@ -52,7 +52,7 @@
       <ul class="space-y-1.5 text-sm">
         {% for s in status %}
         <li class="flex items-start gap-2">
-          <span class="{{ 'text-emerald-600' if s.on else 'text-slate-300' }}">{{ '●' if s.on else '○' }}</span>
+          <span class="{{ 'text-sky-600' if s.on else 'text-slate-300' }}">{{ '●' if s.on else '○' }}</span>
           <span><span class="{{ '' if s.on else 'text-slate-400' }}">{{ s.label }}</span>
             <span class="block text-xs text-slate-400">{{ s.note }}</span></span>
         </li>

@@ -1,22 +1,12 @@
 """End-to-end smoke test: app boots, auth gates, settings renders. Keyless.
-Run: `python -m pytest tests/test_smoke.py -v` from openlease/."""
-import os
-import tempfile
+Run: `python -m pytest tests/test_smoke.py -v` from openlease/.
 
-_DB = os.path.join(tempfile.gettempdir(), "openlease_smoke.db")
-os.environ["DB_PATH"] = _DB
-os.environ["OPENLEASE_PASSWORD"] = "test-pw"
-for _k in ("ANTHROPIC_API_KEY", "VOYAGE_API_KEY", "GOOGLE_MAPS_KEY"):
-    os.environ[_k] = ""
-for _ext in ("", "-wal", "-shm"):  # fresh DB -> the id-1 assumption holds every run
-    try:
-        os.remove(_DB + _ext)
-    except FileNotFoundError:
-        pass
+Shared env bootstrap (DB_PATH, OPENLEASE_PASSWORD, blank keys) lives in tests/conftest.py —
+it has to run before `app.config`'s process-wide `settings` singleton is first created,
+which can happen via any test module pytest collects first, not necessarily this one."""
+from fastapi.testclient import TestClient
 
-from fastapi.testclient import TestClient  # noqa: E402
-
-from app.app import app  # noqa: E402
+from app.app import app
 
 
 def test_auth_and_settings():

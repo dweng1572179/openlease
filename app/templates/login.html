@@ -2,13 +2,13 @@
 {% block title %}OpenLease — sign in{% endblock %}
 {% block content %}
 <div class="mx-auto max-w-sm mt-16">
-  <h1 class="text-xl font-semibold mb-1">Open<span class="text-emerald-600">Prop</span></h1>
-  <p class="text-sm text-slate-500 mb-6">Self-hosted property intelligence.</p>
+  <h1 class="text-xl font-semibold mb-1">Open<span class="text-sky-600">Lease</span></h1>
+  <p class="text-sm text-slate-500 mb-6">Self-hosted CRE leasing search.</p>
   <form method="post" action="/login" class="space-y-3">
     <input type="password" name="password" placeholder="Password" autofocus
-           class="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+           class="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sky-500">
     {% if error %}<p class="text-sm text-red-600">{{ error }}</p>{% endif %}
-    <button class="w-full rounded-lg bg-emerald-600 px-3 py-2 text-white font-medium hover:bg-emerald-700">
+    <button class="w-full rounded-lg bg-sky-600 px-3 py-2 text-white font-medium hover:bg-sky-700">
       Sign in
     </button>
   </form>

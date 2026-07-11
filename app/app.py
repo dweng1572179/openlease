@@ -1,6 +1,7 @@
 """FastAPI app: single service, single user. Routes stay thin — data access in db.py,
 provider calls behind registry.py. Auth is one password + a signed session cookie."""
 import secrets
+from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -11,7 +12,16 @@ from .cache import budget_remaining_cents, spend_this_month
 from .config import settings
 from .db import init_db
 
-app = FastAPI(title="OpenLease")
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    init_db()
+    from . import settings_store
+    settings_store.load_overrides()
+    yield
+
+
+app = FastAPI(title="OpenLease", lifespan=_lifespan)
 
 _secret = settings.secret_key or secrets.token_hex(32)
 if not settings.secret_key:
@@ -26,13 +36,6 @@ app.add_middleware(
 )
 
 templates = Jinja2Templates(directory="app/templates")
-
-
-@app.on_event("startup")
-def _startup():
-    init_db()
-    from . import settings_store
-    settings_store.load_overrides()
 
 
 # --- auth --------------------------------------------------------------------
@@ -56,7 +59,7 @@ async def _redirect_handler(request: Request, exc: _Redirect):
 
 @app.get("/login", response_class=HTMLResponse)
 def login_form(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+    return templates.TemplateResponse(request, "login.html", {"error": None})
 
 
 @app.post("/login")
@@ -65,7 +68,7 @@ def login(request: Request, password: str = Form(...)):
         request.session["auth"] = True
         return RedirectResponse("/", status_code=303)
     return templates.TemplateResponse(
-        "login.html", {"request": request, "error": "Wrong password."}, status_code=401
+        request, "login.html", {"error": "Wrong password."}, status_code=401
     )
 
 
@@ -88,7 +91,7 @@ def spend_ctx() -> dict:
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request, _=Depends(require_auth)):
     return templates.TemplateResponse(
-        "home.html", {"request": request, "metro": "nyc", **spend_ctx()}
+        request, "home.html", {"metro": "nyc", **spend_ctx()}
     )
 
 
