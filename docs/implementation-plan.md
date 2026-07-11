@@ -6,7 +6,7 @@
 
 **Architecture:** Modeled on OpenProp, file-for-file: FastAPI + Jinja + HTMX + Tailwind(CDN) + MapLibre, stdlib `sqlite3` (WAL, no ORM), providers behind Protocols selected by a lazy `registry`, every network call wrapped in `cache.cached()` with a monthly paid-spend cap. Four layers: **supply** (a generic fetch ladder over allowlisted broker sites + free government feeds), **enrichment** (per-metro parcel providers + metro-agnostic Walk/Transit scoring), **search** (LLM parse → hard SQL filter → FTS5 BM25 (+ optional cosine) fused with RRF → LLM reply), **AI workspace** (per-listing RAG chat, portfolios, export).
 
-**Tech Stack:** Python 3.11+, FastAPI 0.115.6, uvicorn, pydantic 2.10.4 / pydantic-settings 2.7.0, Jinja2, httpx 0.28.1, `anthropic==0.116.0` (needs `messages.parse`), `scrapling[fetchers,ai]==0.4.10`, `numpy` (cosine only), `openpyxl` (xlsx), SQLite FTS5 (stdlib), MapLibre GL (CDN).
+**Tech Stack:** Python 3.11+, FastAPI 0.115.6, uvicorn, pydantic 2.10.4 / pydantic-settings 2.7.0, Jinja2, httpx 0.28.1, `anthropic==0.116.0` (needs `messages.parse`), `scrapling[fetchers]==0.4.10`, `numpy` (cosine only), `openpyxl` (xlsx), SQLite FTS5 (stdlib), MapLibre GL (CDN).
 
 **Before Task 1:** several files are lifted verbatim from OpenProp, which is its own repo
 with the same root shape as this one (`app/`, `tests/`, `requirements.txt`). Clone it as a
@@ -498,8 +498,17 @@ pyyaml==6.0.2                # metros.yml / sources.yml
 openpyxl==3.1.5              # xlsx export
 numpy==2.2.1                 # brute-force cosine over the embedding matrix (T12)
 anthropic==0.116.0           # needs messages.parse (structured outputs); AI degrades without a key
-scrapling[fetchers,ai]==0.4.10   # the fetch ladder; `scrapling install` adds the stealth browser
+scrapling[fetchers]==0.4.10   # the fetch ladder; `scrapling install` adds the stealth browser
 ```
+
+> **Correction (Task 1, verified live):** the brief originally pinned `scrapling[fetchers,ai]`.
+> The `ai` extra pulls in `mcp>=1.27.0`, which requires `pydantic>=2.11.0` — a hard conflict
+> with this plan's pinned `pydantic==2.10.4` (`pip install` fails with `ResolutionImpossible`).
+> Nothing in this codebase uses scrapling's AI/MCP shell (Task 10 only imports
+> `scrapling.fetchers.{FetcherSession,StealthySession}` and `scrapling.parser.Selector`, both
+> covered by the `fetchers` extra), so the fix is to drop the unused `ai` extra rather than
+> bump pydantic. `requirements.txt` and `docs/implementation-plan.md` both corrected in the
+> Task 1 commit.
 
 `run.sh` (`chmod +x`):
 

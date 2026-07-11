@@ -1,0 +1,13 @@
+# docker compose up  ->  http://localhost:8788
+services:
+  openlease:
+    build: .
+    ports:
+      - "${OPENLEASE_PORT:-8788}:8000"   # host -> container (container stays on 8000)
+    env_file: .env
+    volumes:
+      - openlease-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  openlease-data:

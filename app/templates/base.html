@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}OpenLease{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+</head>
+<body class="h-full bg-slate-50 text-slate-800">
+  <header class="border-b bg-white">
+    <div class="mx-auto max-w-7xl px-4 py-3 flex items-center justify-between">
+      <a href="/" class="font-semibold text-lg tracking-tight">Open<span class="text-sky-600">Lease</span></a>
+      <div class="flex items-center gap-4 text-sm">
+        {% if budget_cents is defined %}
+        <span class="text-slate-500" title="Paid provider spend this calendar month">
+          spend: <b>${{ "%.2f"|format(spend_cents/100) }}</b> / ${{ "%.2f"|format(budget_cents/100) }}
+        </span>
+        {% endif %}
+        <a href="/settings" class="text-slate-400 hover:text-slate-700">settings</a>
+        <a href="/logout" class="text-slate-400 hover:text-slate-700">logout</a>
+      </div>
+    </div>
+  </header>
+  <main class="mx-auto max-w-7xl px-4 py-6">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

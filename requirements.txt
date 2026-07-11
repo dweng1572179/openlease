@@ -1,0 +1,15 @@
+# OpenLease — self-hosted CRE leasing search. Lean by design.
+# SQLite (+FTS5) is stdlib; HTMX/Tailwind/MapLibre are CDN (no JS build).
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+pydantic-settings==2.7.0
+jinja2==3.1.5
+itsdangerous==2.2.0          # signed session cookies (Starlette SessionMiddleware)
+httpx==0.28.1
+python-multipart==0.0.20     # form posts from HTMX
+pyyaml==6.0.2                # metros.yml / sources.yml
+openpyxl==3.1.5              # xlsx export
+numpy==2.2.1                 # brute-force cosine over the embedding matrix (T12)
+anthropic==0.116.0           # needs messages.parse (structured outputs); AI degrades without a key
+scrapling[fetchers]==0.4.10   # the fetch ladder; `scrapling install` adds the stealth browser
