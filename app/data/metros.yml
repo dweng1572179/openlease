@@ -1,0 +1,58 @@
+# Per-metro constants. Verified 2026-07-11 (spec §7).
+nyc:
+  name: New York City
+  bbox: [40.4774, -74.2591, 40.9176, -73.7002]   # min_lat, min_lng, max_lat, max_lng
+  center: [40.7580, -73.9855]
+  airports:
+    JFK: [40.6413, -73.7781]
+    LGA: [40.7769, -73.8740]
+    EWR: [40.6895, -74.1745]
+  parcel_key: bbl
+  owner_available: true
+  zoning_available: true
+  zoning_source: NYC PLUTO (citywide)
+  boroughs: [Manhattan, Brooklyn, Queens, Bronx, Staten Island]
+mia:
+  name: Miami
+  bbox: [25.55, -80.50, 25.98, -80.10]
+  center: [25.7743, -80.1937]
+  airports:
+    MIA: [25.7959, -80.2870]
+    FLL: [26.0742, -80.1506]
+  parcel_key: folio
+  owner_available: true
+  zoning_available: partial
+  # County zoning returns 0 features inside incorporated cities (Brickell, Wynwood,
+  # Downtown). We branch to the municipal layer; outside a known branch, zoning is null.
+  zoning_source: Miami-Dade county layer (unincorporated) + M21_Zoning (City of Miami)
+  boroughs: [Miami, Miami Beach, Coral Gables, Doral, Hialeah]
+la:
+  name: Los Angeles
+  bbox: [33.70, -118.70, 34.35, -117.85]
+  center: [34.0522, -118.2437]
+  airports:
+    LAX: [33.9416, -118.4085]
+    BUR: [34.2007, -118.3587]
+    LGB: [33.8177, -118.1516]
+    SNA: [33.6757, -117.8683]
+    ONT: [34.0560, -117.6012]
+  parcel_key: ain
+  owner_available: false
+  # California statute: owner-of-record is not free/public via the county's open GIS.
+  owner_source: null (California statute — not published free; not a lookup failure)
+  zoning_available: true
+  zoning_source: LA County ArcGIS zoning layer (no FAR)
+  boroughs: [Downtown, Hollywood, Westside, San Fernando Valley, South Bay]
+chi:
+  name: Chicago
+  bbox: [41.469, -88.264, 42.154, -87.524]
+  center: [41.8781, -87.6298]
+  airports:
+    ORD: [41.9742, -87.9073]
+    MDW: [41.7868, -87.7522]
+  parcel_key: pin
+  owner_available: true
+  zoning_available: partial
+  # Zoning/floors/FAR are a City of Chicago dataset: null for ~half the county (suburbs).
+  zoning_source: City of Chicago zoning (city limits only — null for suburban Cook)
+  boroughs: [Loop, West Loop, River North, Lincoln Park, Hyde Park]

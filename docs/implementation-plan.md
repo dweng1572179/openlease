@@ -1127,6 +1127,11 @@ _LISTING_COLS = [
     "score_breakdown_json", "semantic_score", "score", "rationale",
 ]
 _JSON_FIELDS = ("features_json", "highlights_json", "photo_urls_json", "score_breakdown_json")
+# Columns with `NOT NULL DEFAULT` in SCHEMA: an explicit NULL in an INSERT's VALUES list
+# bypasses a column's SQL DEFAULT (defaults only apply when the column is *omitted*), so
+# a bare `:status` placeholder would violate the NOT NULL constraint whenever `rec` doesn't
+# set it. COALESCE the placeholder itself down to the same literal the schema declares.
+_SQL_DEFAULTS = {"status": "'available'", "transaction_type": "'lease'"}
 
 
 def save_listing(rec: dict) -> int:
@@ -1137,10 +1142,18 @@ def save_listing(rec: dict) -> int:
         if isinstance(row.get(k), (list, dict)):
             row[k] = json.dumps(row[k])
     cols = ", ".join(_LISTING_COLS)
-    placeholders = ", ".join(f":{c}" for c in _LISTING_COLS)
-    # never overwrite a good value with a NULL from a thinner re-crawl
+    placeholders = ", ".join(
+        f"COALESCE(:{c}, {_SQL_DEFAULTS[c]})" if c in _SQL_DEFAULTS else f":{c}"
+        for c in _LISTING_COLS
+    )
+    # Never overwrite a good value with a NULL from a thinner re-crawl. Reference the raw
+    # bound parameter (`:col`), not `excluded.col`: `excluded.col` is the *post-default*
+    # value from the VALUES clause above, which for status/transaction_type is never NULL
+    # — using it here would silently reset an existing 'leased' status back to 'available'
+    # on every re-crawl that doesn't repeat it. `:col` is the caller's raw input, so
+    # "didn't mention it" still means "leave the stored value alone" for every column.
     updates = ", ".join(
-        f"{c}=COALESCE(excluded.{c}, {c})" for c in _LISTING_COLS if c != "source_url"
+        f"{c}=COALESCE(:{c}, {c})" for c in _LISTING_COLS if c != "source_url"
     )
     with get_conn() as conn:
         cur = conn.execute(
@@ -1159,6 +1172,19 @@ def get_listing(listing_id: int) -> dict | None:
 ```
 
 Add `import json` to `db.py`'s imports.
+
+**Correction (2026-07-11, Task 2 implementation):** the code above as originally drafted
+raised `sqlite3.IntegrityError: NOT NULL constraint failed: listing.status` on the very
+first `seed()` call — the DEMO listings never set `status`, and an explicit `NULL` in an
+`INSERT`'s `VALUES` list bypasses a column's SQL `DEFAULT` (the default only applies when
+the column is omitted from the statement entirely). A plain `COALESCE(excluded.col, col)`
+fix would have "worked" but reintroduced the exact bug the comment above it warns against:
+`excluded.status` is the *post-default* value, never NULL, so it would silently reset a
+listing's status back to `'available'` on every re-crawl that doesn't repeat it. The fix
+applied instead: default `status`/`transaction_type` at the placeholder level
+(`_SQL_DEFAULTS`, `COALESCE(:col, '<schema default>')`) and reference the raw bound
+parameter (`:col`), not `excluded.col`, in the `ON CONFLICT` update clause — so "the
+crawler didn't mention it" still means "leave the stored value alone" for every column.
 
 - [ ] **Step 4: Write `seed.py`**
 
