@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.ruff_cache/
+.env
+openlease.db
+openlease.db-*
+*.db
+app/data/elements.db
+.DS_Store
+
+# never commit a real env; .env alone does not match .env.bak/.env.local
+.env.*
+!.env.example
