@@ -1050,6 +1050,10 @@ _JSON_COLS = {
     "photo_urls_json": "photos",
     "score_breakdown_json": "scoreBreakdown",
 }
+# An empty JSON column decodes to its container's empty value, not to []. score_breakdown
+# is the per-category walk-score dict (Task 8); serving it as [] would hand the UI a list
+# where it iterates .items().
+_JSON_EMPTY: dict[str, list | dict] = {"score_breakdown_json": {}}
 _RENAME = {"our_description": "description"}   # we serve OUR prose under their key
 
 
@@ -1058,7 +1062,7 @@ def to_api(row: dict) -> dict:
     out: dict = {}
     for k, v in dict(row).items():
         if k in _JSON_COLS:
-            out[_JSON_COLS[k]] = json.loads(v) if v else []
+            out[_JSON_COLS[k]] = json.loads(v) if v else _JSON_EMPTY.get(k, [])
         elif k in _RENAME:
             out[_RENAME[k]] = v
         else:
