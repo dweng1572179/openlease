@@ -191,3 +191,55 @@ def test_cosine_falls_back_loudly_on_budget_exceeded(monkeypatch, caplog):
     with caplog.at_level(logging.WARNING, logger="openlease"):
         assert rank.cosine_ids(list(ids.values()), "wynwood retail") == []
     assert "budget" in caplog.text.lower()
+
+
+# --- a key is an UNLOCK, never a requirement -------------------------------------------
+
+class _BrokenEmbedder:
+    """A stale/revoked key, a 429, a Voyage outage — anything that is NOT BudgetExceeded."""
+
+    def embed(self, texts, input_type="document"):
+        import httpx
+        raise httpx.HTTPStatusError("401 Unauthorized", request=None, response=None)
+
+
+def test_a_bad_voyage_key_degrades_to_bm25_instead_of_500ing_the_search(monkeypatch, caplog):
+    """rank.py caught ONLY BudgetExceeded, so an HTTPStatusError from a stale key
+    propagated out through rank_listings -> /api/search as a 500. That turns the optional
+    semantic layer into a hard requirement — the exact inverse of the keyless promise.
+    It must degrade to BM25 and say so LOUDLY."""
+    ids = _setup()
+    db.save_vector(ids["a"], [1.0, 0.0])          # a vector exists, so we reach the embedder
+    monkeypatch.setattr(registry, "embedder", lambda: _BrokenEmbedder())
+
+    with caplog.at_level(logging.WARNING, logger="openlease"):
+        assert rank.cosine_ids(list(ids.values()), "wynwood retail") == []
+    assert "voyage failed" in caplog.text.lower()
+
+    # ...and the SEARCH still works, fused over BM25 alone
+    q = ListingQuery(keywords=["Wynwood", "retail"])
+    out = rank.rank_listings(list(ids.values()), q)
+    assert out and out[0]["id"] == ids["c"]
+
+
+def test_embed_listings_survives_a_broken_key_too(monkeypatch, caplog):
+    ids = _setup()
+    monkeypatch.setattr(registry, "embedder", lambda: _BrokenEmbedder())
+    with caplog.at_level(logging.WARNING, logger="openlease"):
+        assert rank.embed_listings(list(ids.values())) == 0
+    assert "voyage failed" in caplog.text.lower()
+
+
+def test_something_in_the_app_actually_calls_embed_listings():
+    """The whole Voyage feature was UNREACHABLE: nothing outside tests ever called
+    embed_listings, so listing_vec was always empty, cosine_ids short-circuited on every
+    search, and setting VOYAGE_API_KEY changed nothing — while the Settings dashboard
+    reported semantic ranking as "on". A feature that is advertised and does not run is
+    worse than one that is absent."""
+    import inspect
+
+    from app import crawl
+    assert hasattr(crawl, "embed_pending")
+    assert "embed_listings" in inspect.getsource(crawl.embed_pending)
+    # ...and the enrichment pass invokes it, so an ingest actually populates the vectors
+    assert "embed_pending" in inspect.getsource(crawl.enrich_pending)

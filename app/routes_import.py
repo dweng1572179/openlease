@@ -28,18 +28,22 @@ _FLOAT = {"asking_rent", "lat", "lng"}
 
 @app.post("/api/import/storefronts")
 def import_storefronts(limit: int = 500, _=Depends(require_auth)):
-    """NYC only — it is the only one of the four metros that publishes a vacancy feed."""
+    """NYC only — it is the only one of the four metros that publishes a vacancy feed.
+
+    Import stores the leads and stops there. Scoring is `POST /api/enrich`, the same
+    separate paced pass the crawler uses (`crawl.enrich_pending` already selects exactly
+    these rows: lat IS NOT NULL AND walk_score IS NULL).
+
+    This used to call score.enrich() inline, unpaced, inside the loop, and swallow every
+    failure with a bare `except: pass`. At the default limit that fired up to 500
+    back-to-back Overpass calls — each with retries and 8-64s of backoff — and discarded
+    every failure without a single log line. Same coupling that throttled the crawler, plus
+    the only completely silent provider failure left in the codebase.
+    """
     recs = gov_nyc.storefronts(limit=limit)
-    saved = 0
-    for rec in recs:
-        lid = db.save_listing(rec)
-        saved += 1
-        if rec.get("lat"):
-            try:
-                score.enrich(lid)
-            except Exception:  # noqa: BLE001 — a scoring failure must not lose the lead
-                pass
-    return {"fetched": len(recs), "saved": saved}
+    saved = sum(bool(db.save_listing(rec)) for rec in recs)
+    return {"fetched": len(recs), "saved": saved,
+            "note": "POST /api/enrich to Walk/Transit-score these (paced separately)"}
 
 
 @app.post("/api/import/csv")

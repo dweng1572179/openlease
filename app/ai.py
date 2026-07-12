@@ -301,6 +301,26 @@ def _rules_parse(message: str, metro: str, *, default_transaction_type: str = "l
 
 # --- conversational reply -----------------------------------------------------
 
+def _keyless_reply(results: list[dict], is_near_miss: bool,
+                   relaxed_what: str) -> tuple[str, list[str]]:
+    """The deterministic summary. A plain function, NOT `reply()` re-entered with the key
+    blanked out: the old fallback did `settings.anthropic_api_key = ""`, recursed, and
+    restored it in a `finally`. `settings` is a process-wide singleton and FastAPI runs
+    sync handlers in a threadpool, so during that window ANY concurrent request calling
+    `available()` silently took the keyless path — a paid-for LLM search quietly downgraded
+    to the rules parser because another request happened to be failing over. That is
+    exactly the silent-downgrade class this module exists to prevent."""
+    head = results[0]
+    if is_near_miss:
+        near = (f"Nothing matched exactly — I relaxed {relaxed_what}. " if relaxed_what
+                else "Nothing matched exactly, so here are the closest misses. ")
+    else:
+        near = ""
+    return (f"{near}{len(results)} match{'es' if len(results) != 1 else ''}. "
+            f"The closest is {head.get('address')} — {head.get('rationale', '')}.",
+            ["Show only ground floor", "Raise the size cap", "Drop the rent cap"])
+
+
 def reply(message: str, q: ListingQuery, results: list[dict], is_near_miss: bool,
           relaxed_what: str = "") -> tuple[str, list[str]]:
     """(reply, suggestions). Keyless: a deterministic summary. Keyed: the LLM writes it.
@@ -320,15 +340,7 @@ def reply(message: str, q: ListingQuery, results: list[dict], is_near_miss: bool
                 "size range or the rent cap.",
                 ["Widen the size range", "Raise the rent cap", "Try a nearby neighborhood"])
     if not available():
-        head = results[0]
-        if is_near_miss:
-            near = (f"Nothing matched exactly — I relaxed {relaxed_what}. "
-                     if relaxed_what else "Nothing matched exactly, so here are the closest misses. ")
-        else:
-            near = ""
-        return (f"{near}{len(results)} match{'es' if len(results) != 1 else ''}. "
-                f"The closest is {head.get('address')} — {head.get('rationale', '')}.",
-                ["Show only ground floor", "Raise the size cap", "Drop the rent cap"])
+        return _keyless_reply(results, is_near_miss, relaxed_what)
     facts = "\n".join(
         f"- {r.get('address')} | {r.get('sizeSf')} SF | {r.get('propertyType')} | "
         f"${r.get('askingRent')} {r.get('rentUnit')} | {r.get('rationale')}"
@@ -370,12 +382,7 @@ def reply(message: str, q: ListingQuery, results: list[dict], is_near_miss: bool
     except Exception as e:  # noqa: BLE001
         log.warning("AI reply failed (%s) — returning the deterministic summary: %s",
                     type(e).__name__, e)
-    settings_backup = settings.anthropic_api_key
-    try:
-        settings.anthropic_api_key = ""      # force the keyless branch, once
-        return reply(message, q, results, is_near_miss, relaxed_what)
-    finally:
-        settings.anthropic_api_key = settings_backup
+    return _keyless_reply(results, is_near_miss, relaxed_what)
 
 
 # --- per-listing AI: highlights + RAG chat (T13) ------------------------------

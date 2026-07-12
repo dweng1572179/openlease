@@ -232,7 +232,12 @@ def test_import_storefronts_saves_leads_with_no_invented_data(isolated_db, monke
         c.post("/login", data={"password": "test-pw"})
         r = c.post("/api/import/storefronts")
         assert r.status_code == 200, r.text
-        assert r.json() == {"fetched": 2, "saved": 2}
+        body = r.json()
+        assert body["fetched"] == 2 and body["saved"] == 2
+        # import stores leads and STOPS. Scoring is POST /api/enrich — the same paced
+        # pass the crawler uses. Enriching inline fired up to 500 unpaced Overpass
+        # calls and swallowed every failure with a bare `except: pass`.
+        assert "enrich" in body["note"]
 
     with db.get_conn() as conn:
         row = conn.execute(
@@ -242,8 +247,15 @@ def test_import_storefronts_saves_leads_with_no_invented_data(isolated_db, monke
     assert row["asking_rent"] is None
     assert row["broker_name"] is None
     assert row["status"] == "available"
-    # only the row WITH lat/lng triggers enrichment -- the other has no coordinates yet
-    assert enrich_calls == [row["id"]]
+    # The import does NOT score. It used to call score.enrich() inline, unpaced, inside
+    # the loop -- at the default limit=500 that fired up to 500 back-to-back Overpass
+    # calls, each with retries and 8-64s of backoff -- and swallowed every failure with
+    # a bare `except: pass`, the only completely silent provider failure in the app.
+    # Scoring is `POST /api/enrich` now: the same separate, paced, loudly-logged pass
+    # the crawler uses, which already selects exactly these rows
+    # (lat IS NOT NULL AND walk_score IS NULL).
+    assert enrich_calls == [], "import stores leads; scoring is a separate paced pass"
+    assert row["walk_score"] is None
 
 
 def test_import_storefronts_requires_auth():

@@ -100,6 +100,15 @@ def embed_listings(listing_ids: list[int]) -> int:
                 done, len(ids), e,
             )
             return done
+        except Exception as e:  # noqa: BLE001 — a key is an UNLOCK, never a requirement
+            # An expired key (401), a rate limit (429) or a Voyage outage must degrade to
+            # BM25, not abort the backfill. Catching only BudgetExceeded let an
+            # HTTPStatusError escape — the one paid surface in the app that could still
+            # take the caller down with it.
+            log.warning("Embedding backfill stopped after %d/%d listings — Voyage failed "
+                        "(%s: %s); the rest stay BM25-only.", done, len(ids),
+                        type(e).__name__, e)
+            return done
         for i, v in zip(chunk, vecs):
             save_vector(i, v)
         done += len(chunk)
@@ -131,6 +140,14 @@ def cosine_ids(candidate_ids: list[int], query_text: str) -> list[int]:
             "Semantic ranking skipped for this search — monthly paid-spend cap reached "
             "(%s); falling back to BM25 only.", e,
         )
+        return []
+    except Exception as e:  # noqa: BLE001 — a key is an UNLOCK, never a requirement
+        # A bad/expired key or a Voyage hiccup must not 500 the user's search. Catching
+        # only BudgetExceeded meant an HTTPStatusError propagated straight out through
+        # rank_listings -> /api/search: setting a stale VOYAGE_API_KEY would have turned
+        # the optional semantic layer into a hard requirement.
+        log.warning("Semantic ranking skipped for this search — Voyage failed (%s: %s); "
+                    "falling back to BM25 only.", type(e).__name__, e)
         return []
     n = float(np.linalg.norm(q))
     if n:

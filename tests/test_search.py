@@ -161,3 +161,34 @@ def test_session_history_and_prior_state(client):
     assert [t["message"] for t in turns] == [
         "retail in wynwood 1500 sf", "make it bigger — at least 5000 sf"]
     assert turns[1]["mustHaves"]["minSizeSf"] == 5000
+
+
+def test_suggestion_chips_are_not_broken_html(client):
+    """`{{ s|tojson }}` in an onclick emits a DOUBLE-quoted JSON string and does not escape
+    `"`, so the first quote TERMINATED the onclick attribute and the rest of the handler was
+    parsed as junk boolean attributes. Every suggestion chip was a dead no-op — and
+    follow-up refinement is a headline feature. (`forceescape` fixes it; the pins island in
+    the same template already did this correctly.)"""
+    from html.parser import HTMLParser
+
+    r = client.post("/search", data={"message": "office around 8000 sf under $1/sf",
+                                     "metro": "nyc"})
+    assert r.status_code == 200
+    assert "htmx.trigger" in r.text, "the suggestion chips should be on the page at all"
+
+    handlers = []
+
+    class _P(HTMLParser):
+        def handle_starttag(self, tag, attrs):
+            if tag == "button":
+                d = dict(attrs)
+                if "onclick" in d:
+                    handlers.append(d["onclick"])
+                # a truncated attribute leaks the rest of the handler as bare attributes
+                assert not any(v is None and k not in ("disabled",) for k, v in attrs), attrs
+
+    _P().feed(r.text)
+    assert handlers, "no onclick survived the parse — the attribute was truncated"
+    for h in handlers:
+        assert h.rstrip().endswith("'submit')"), h   # the WHOLE handler is intact
+        assert "htmx.trigger" in h

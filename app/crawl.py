@@ -538,7 +538,8 @@ def run(metro: str | None = None, limit: int = 100, enrich: bool = False) -> dic
 
 
 def enrich_pending(limit: int = 500) -> int:
-    """Score every stored listing that has coordinates but no Walk Score yet.
+    """Score every stored listing that has coordinates but no Walk Score yet, and — if a
+    Voyage key is set — backfill its embedding.
 
     Separate from the crawl on purpose (see `run`). Paced by
     `settings.overpass_pace_seconds`, and an Overpass failure is a LOUD skip — the score
@@ -558,4 +559,24 @@ def enrich_pending(limit: int = 500) -> int:
             log.warning("scoring failed for listing %s: %s: %s", lid, type(e).__name__, e)
         time.sleep(settings.overpass_pace_seconds)
     log.info("enriched %d/%d pending listings", done, len(ids))
+    embed_pending()
     return done
+
+
+def embed_pending(limit: int = 2000) -> int:
+    """Backfill Voyage embeddings for stored listings. A no-op without a key.
+
+    Nothing in the app called `rank.embed_listings` — it existed, it was tested, and it was
+    unreachable. So `listing_vec` was always empty, `cosine_ids` short-circuited on every
+    search, and setting VOYAGE_API_KEY changed NOTHING about the results while the Settings
+    dashboard cheerfully reported semantic ranking as "on". A feature that is advertised and
+    does not run is worse than one that is absent.
+    """
+    from . import rank
+    with get_conn() as conn:
+        ids = [r["id"] for r in conn.execute(
+            "SELECT id FROM listing LIMIT ?", (limit,)).fetchall()]
+    n = rank.embed_listings(ids)      # returns 0 with no key; degrades loudly on failure
+    if n:
+        log.info("embedded %d listings for semantic ranking", n)
+    return n

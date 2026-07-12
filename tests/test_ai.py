@@ -341,3 +341,21 @@ def test_ask_repeated_identical_question_hits_cache_and_never_rebills(monkeypatc
     ai.ask(_LISTING, "what's the ceiling height?", [])
     ai.ask(_LISTING, "what's the ceiling height?", [])
     assert len(calls) == 1
+
+
+def test_the_reply_fallback_does_not_blank_the_key_on_the_shared_settings_object():
+    """The old fallback did `settings.anthropic_api_key = ""`, recursed into reply(), and
+    restored it in a `finally`. `settings` is a process-wide singleton and FastAPI runs sync
+    handlers in a threadpool — so during that window ANY concurrent request calling
+    available() silently took the keyless path. A paid LLM search quietly downgraded to the
+    rules parser because some OTHER request happened to be failing over. The fallback is now
+    a plain function call."""
+    import inspect
+
+    src = inspect.getsource(ai.reply)
+    assert "anthropic_api_key = " not in src, "reply() must not mutate the global settings"
+    assert "_keyless_reply(" in src
+
+    out, sugg = ai._keyless_reply(
+        [{"address": "1 Main St", "rationale": "1,500 SF retail"}], True, "the rent cap")
+    assert "relaxed the rent cap" in out and len(sugg) == 3

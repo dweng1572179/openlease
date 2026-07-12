@@ -213,7 +213,13 @@ def from_html_llm(markdown: str, url: str, src: dict, metro: str) -> dict | None
                     "does not state. Never invent a value.\n\n"
                     "our_description: write ONE original sentence describing the space FROM "
                     "THE FACTS (size, type, floor, location, features). Do NOT copy, quote, "
-                    "or paraphrase the page's marketing copy — write your own."),
+                    "or paraphrase the page's marketing copy — write your own.\n\n"
+                    "features: SHORT FACTUAL TAGS ONLY — e.g. \"corner\", \"loading dock\", "
+                    "\"ground floor\", \"corner unit\", \"elevator\". Two or three words each. "
+                    "Do NOT copy the page's own bullet list, headlines, or selling phrases. "
+                    "If a bullet reads like marketing (\"Incredible flagship opportunity!\"), "
+                    "reduce it to the underlying fact or omit it entirely. We store facts, "
+                    "never the broker's expression."),
             messages=[{"role": "user", "content": page_text}],
             output_format=ListingExtract,
         )
