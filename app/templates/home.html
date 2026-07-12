@@ -1,5 +1,57 @@
 {% extends "base.html" %}
 {% block content %}
-<h1 class="text-xl font-semibold mb-2">Describe the space you need</h1>
-<p class="text-sm text-slate-500">Search lands in Task 5.</p>
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4" style="height: calc(100vh - 8rem)">
+  <div class="flex flex-col min-h-0">
+    <form hx-post="/search" hx-target="#results" hx-indicator="#spin"
+          class="flex gap-2 items-center mb-3">
+      <select name="metro" class="rounded border-slate-300 text-sm py-2">
+        {% for key, m in metros.items() %}
+        <option value="{{ key }}" {% if key == metro %}selected{% endif %}>{{ m.name }}</option>
+        {% endfor %}
+      </select>
+      <input name="message" required autofocus
+             placeholder="retail in Wynwood ~1,500 SF under $8k/mo"
+             class="flex-1 rounded border-slate-300 text-sm py-2">
+      <input type="hidden" name="session_id" id="session_id" value="">
+      <input type="hidden" name="prior_state" id="prior_state" value="">
+      <button class="rounded bg-sky-600 px-4 py-2 text-sm font-medium text-white">Search</button>
+      <span id="spin" class="htmx-indicator text-xs text-slate-400">…</span>
+    </form>
+    <div id="results" class="overflow-y-auto flex-1 pr-1">
+      <p class="text-sm text-slate-500">Describe the space you need — plain English.</p>
+    </div>
+  </div>
+  <div id="map" class="rounded-lg border bg-white min-h-0"></div>
+</div>
+
+<script>
+  const CENTER = {{ metros[metro].center | tojson }};
+  const map = new maplibregl.Map({
+    container: 'map',
+    style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+    center: [CENTER[1], CENTER[0]], zoom: 11,
+  });
+  let markers = [];
+  // the results fragment carries the pins as JSON; draw them when HTMX swaps it in
+  document.body.addEventListener('htmx:afterSwap', (e) => {
+    if (e.target.id !== 'results') return;
+    const data = document.getElementById('pins');
+    if (!data) return;
+    markers.forEach(m => m.remove()); markers = [];
+    const pins = JSON.parse(data.textContent);
+    document.getElementById('session_id').value = data.dataset.session || '';
+    document.getElementById('prior_state').value = data.dataset.must || '';
+    const b = new maplibregl.LngLatBounds();
+    pins.forEach(p => {
+      if (p.lng == null || p.lat == null) return;
+      const el = document.createElement('div');
+      el.className = 'rounded-full bg-sky-600 text-white text-[10px] px-2 py-1 shadow cursor-pointer';
+      el.textContent = p.label;
+      el.onclick = () => location.href = '/listings/' + p.id;
+      markers.push(new maplibregl.Marker({element: el}).setLngLat([p.lng, p.lat]).addTo(map));
+      b.extend([p.lng, p.lat]);
+    });
+    if (!b.isEmpty()) map.fitBounds(b, {padding: 60, maxZoom: 15});
+  });
+</script>
 {% endblock %}

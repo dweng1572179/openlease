@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}{{ l.address }} — OpenLease{% endblock %}
+{% block content %}
+<a href="/" class="text-xs text-slate-400 hover:text-slate-700">&larr; back to search</a>
+<h1 class="mt-2 text-xl font-semibold">{{ l.address }}</h1>
+<p class="text-sm text-slate-500">
+  {{ l.neighborhood or '' }}{% if l.borough %}, {{ l.borough }}{% endif %}
+  · {{ metro_meta.name }}
+  {% if l.sourceUrl and not l.sourceUrl.startswith('seed://') %}
+  · <a class="text-sky-600 hover:underline" href="{{ l.sourceUrl }}" target="_blank" rel="noopener">
+      original listing &nearr;</a>
+  {% endif %}
+</p>
+
+<div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+  <div class="md:col-span-2 space-y-4">
+    <div class="rounded-lg border bg-white p-4">
+      <dl class="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+        {% for label, val in [
+            ("Type", l.propertyType), ("Size", "{:,} SF".format(l.sizeSf) if l.sizeSf else None),
+            ("Ask", "${:,.0f}/SF/yr".format(l.askingRent) if l.askingRent else
+                    ("${:,}".format(l.salePrice) if l.salePrice else None)),
+            ("Lease type", l.leaseType), ("Floor", l.floor),
+            ("Ceiling", "{} ft".format(l.ceilingHeightFt) if l.ceilingHeightFt else None),
+            ("Available", l.availabilityDate), ("Walk Score", l.walkScore),
+            ("Transit Score", l.transitScore)] %}
+          {% if val is not none %}
+          <div><dt class="text-xs text-slate-400">{{ label }}</dt><dd class="font-medium">{{ val }}</dd></div>
+          {% endif %}
+        {% endfor %}
+      </dl>
+    </div>
+
+    {% if l.description %}
+    <div class="rounded-lg border bg-white p-4">
+      <h2 class="text-sm font-semibold mb-1">About the property</h2>
+      <p class="text-sm text-slate-700">{{ l.description }}</p>
+      <p class="mt-2 text-[10px] text-slate-400">
+        Written by OpenLease from the listing's facts. The broker's own copy and photos stay
+        on their site — follow the link above.</p>
+    </div>
+    {% endif %}
+
+    {% if l.photos %}
+    <div class="grid grid-cols-3 gap-2">
+      {% for p in l.photos %}
+      <img src="{{ p }}" referrerpolicy="no-referrer" loading="lazy"
+           class="rounded border object-cover h-28 w-full" alt="">
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% block listing_extra %}{% endblock %}  {# T8 score breakdown, T13 chat #}
+  </div>
+
+  <aside class="space-y-4">
+    <div class="rounded-lg border bg-white p-4 text-sm">
+      <h2 class="text-sm font-semibold mb-2">Parcel</h2>
+      {% if parcel %}
+      <dl class="space-y-2">
+        {% for label, key in [("Owner", "owner_name"), ("Zoning", "zoning"),
+                              ("Year built", "year_built"), ("Lot", "lot_sqft"),
+                              ("Building", "bldg_sqft"), ("Floors", "floors")] %}
+        <div class="flex justify-between gap-3">
+          <dt class="text-xs text-slate-400">{{ label }}</dt>
+          {% if parcel[key] is not none %}
+          <dd class="font-medium">{{ parcel[key] }}</dd>
+          {% else %}
+          <dd class="text-xs text-slate-400 italic text-right"
+              title="{{ parcel.missing_reason.get(key, 'not published in this market') }}">
+            not published here</dd>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </dl>
+      {% else %}
+      <p class="text-xs text-slate-400">No parcel matched this address.</p>
+      {% endif %}
+    </div>
+
+    {% if l.brokerName or l.brokerFirm %}
+    <div class="rounded-lg border bg-white p-4 text-sm">
+      <h2 class="text-sm font-semibold mb-1">Broker</h2>
+      <p>{{ l.brokerName or '' }}</p>
+      <p class="text-xs text-slate-500">{{ l.brokerFirm or '' }}</p>
+      {% if l.brokerPhone %}<p class="text-xs">{{ l.brokerPhone }}</p>{% endif %}
+    </div>
+    {% endif %}
+  </aside>
+</div>
+{% endblock %}

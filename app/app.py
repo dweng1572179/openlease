@@ -90,11 +90,13 @@ def spend_ctx() -> dict:
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request, _=Depends(require_auth)):
+    from .models import METROS
     return templates.TemplateResponse(
-        request, "home.html", {"metro": "nyc", **spend_ctx()}
+        request, "home.html", {"metro": "nyc", "metros": METROS, **spend_ctx()}
     )
 
 
 # Feature routes attach to `app` here as each task lands:
 from . import routes_settings   # noqa: E402,F401  (T1)
 from . import routes_search     # noqa: E402,F401  (T5)
+from . import routes_listings   # noqa: E402,F401  (T6)

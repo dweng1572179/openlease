@@ -2817,6 +2817,8 @@ pipeline as `/api/search`, so there is one search path, not two.
 ```python
 """The HTML surface. `/search` is the HTMX twin of `/api/search` — same pipeline, one
 call, so the two can never drift."""
+import json
+
 from fastapi import Depends, Form, Request
 from fastapi.responses import HTMLResponse
 
@@ -2830,14 +2832,13 @@ from .routes_search import SearchRequest, api_search
 def search_fragment(request: Request, message: str = Form(...), metro: str = Form("nyc"),
                     session_id: str = Form(""), prior_state: str = Form(""),
                     _=Depends(require_auth)):
-    import json
     body = SearchRequest(
         message=message, metro=metro,
         sessionId=session_id or None,
         priorState=json.loads(prior_state) if prior_state else None,
     )
     res = api_search(body, True)
-    return templates.TemplateResponse("_results.html", {"request": request, **res})
+    return templates.TemplateResponse(request, "_results.html", res)
 
 
 @app.get("/listings/{listing_id}", response_class=HTMLResponse)
@@ -2846,8 +2847,8 @@ def listing_page(request: Request, listing_id: int, _=Depends(require_auth)):
     if not row:
         return HTMLResponse("<p class='p-6'>No such listing.</p>", status_code=404)
     return templates.TemplateResponse(
-        "listing.html",
-        {"request": request, "l": to_api(row), "metro_meta": METROS[row["metro"]],
+        request, "listing.html",
+        {"l": to_api(row), "metro_meta": METROS[row["metro"]],
          "parcel": None, **spend_ctx()},   # T9 fills `parcel`
     )
 
@@ -2857,6 +2858,14 @@ def api_listing(listing_id: int, _=Depends(require_auth)):
     row = db.get_listing(listing_id)
     return to_api(row) if row else {"error": "not found"}
 ```
+
+> **Correction (T6):** the block above is written in Starlette's current
+> `TemplateResponse(request, name, context)` form, not the old
+> `TemplateResponse(name, {"request": request, ...})` shape the first draft of this step had.
+> With `-W error` (the project's zero-warnings bar) the old shape fails the suite outright — see
+> the same correction already made for `routes_settings.py`/`login`/`home` at line ~507. `import
+> json` also moves to the module top (it was a stray function-local import serving no purpose —
+> `json.loads` is only called once, at module scope's natural cost).
 
 Add to `app.py`'s route-import block:
 
@@ -2929,14 +2938,15 @@ tiny `hx-on` hook — no build step, no framework.
 {% endblock %}
 ```
 
-`home()` in `app.py` must now pass `metros`:
+`home()` in `app.py` must now pass `metros`, in the same current-signature form as every
+other `TemplateResponse` call in this file (request first, no `request` key in the context dict):
 
 ```python
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request, _=Depends(require_auth)):
     from .models import METROS
     return templates.TemplateResponse(
-        "home.html", {"request": request, "metro": "nyc", "metros": METROS, **spend_ctx()}
+        request, "home.html", {"metro": "nyc", "metros": METROS, **spend_ctx()}
     )
 ```
 
@@ -3149,8 +3159,19 @@ Expected first: FAIL on `'id="map"'`. Then all passed.
 ```
 
 Open http://localhost:8788, log in, switch the metro to Miami, search
-`retail in Wynwood ~1,500 SF under $8k/mo`. Expect: three cards, three pins, the map
-fitting to Wynwood, a click opening the listing page. Ctrl-C when done.
+`retail in Wynwood ~1,500 SF under $8k/mo`.
+
+> **Correction (T6):** this originally said "expect three cards, three pins." Live in the
+> browser it is **one** card and **one** pin — Miami's seed data has exactly one `retail`
+> listing (`2618 NW 2nd Ave`, 1,500 SF), and `property_type` is a HARD filter (never
+> relaxed by the near-miss ladder — see `_LADDER` in `routes_search.py`), so the other two
+> Miami seed rows (office, industrial) never qualify regardless of rent/size relaxation.
+> The listing's own ask is $95/SF/yr against the query's derived $64/SF/yr cap
+> (`$8k/mo * 12 / 1,500 SF`), so the rent-cap stage of the ladder fires and the UI
+> correctly banners "Near miss — nothing matched exactly. Nothing matched exactly — I
+> relaxed the rent cap." Expect: **one** card, **one** pin, the map fitting to Wynwood,
+> the near-miss banner naming the rent cap, and a click opening the listing page. Ctrl-C
+> when done.
 
 - [ ] **Step 8: Commit**
 

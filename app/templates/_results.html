@@ -1,0 +1,25 @@
+<div class="mb-3 rounded-lg bg-white border p-3 text-sm">
+  {% if isNearMiss %}
+  <p class="mb-1 text-xs font-medium text-amber-700">Near miss — nothing matched exactly.</p>
+  {% endif %}
+  <p class="whitespace-pre-line">{{ reply }}</p>
+  {% if suggestions %}
+  <div class="mt-2 flex flex-wrap gap-2">
+    {% for s in suggestions %}
+    <button class="rounded-full border px-3 py-1 text-xs text-slate-600 hover:bg-slate-50"
+            onclick="document.querySelector('[name=message]').value = {{ s|tojson }};
+                     htmx.trigger(document.querySelector('form'), 'submit')">{{ s }}</button>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+<p class="mb-2 text-xs text-slate-500">{{ results|length }} listing{{ '' if results|length == 1 else 's' }}</p>
+{% for l in results %}{% include "_listing_card.html" %}{% endfor %}
+
+<script id="pins" type="application/json"
+        data-session="{{ sessionId }}"
+        data-must="{{ query.mustHaves | tojson | forceescape }}">
+[{% for l in results %}{"id": {{ l.id }}, "lat": {{ l.lat or 'null' }}, "lng": {{ l.lng or 'null' }},
+  "label": {{ ((l.sizeSf|string ~ ' SF') if l.sizeSf else l.address) | tojson }}}{{ "," if not loop.last }}{% endfor %}]
+</script>
