@@ -148,6 +148,8 @@ def nl_to_query(message: str, prior_state: dict | None, metro: str) -> ListingQu
     `BudgetExceeded` instead of silently spending. Either that or any other parse/API
     failure degrades to the rules parser, loudly logged (never silently)."""
     prior = ListingQuery(**prior_state) if prior_state else None
+    if prior:
+        prior = _drop_foreign_geo(prior, metro)
     # A fresh, no-prior search resolves an unstated transactionType to "lease" right here
     # (SpaceFinder's own default). A follow-up turn instead passes "" through unresolved, so
     # _merge() below can tell "the new turn restated lease" apart from "the new turn didn't
@@ -193,6 +195,36 @@ def nl_to_query(message: str, prior_state: dict | None, metro: str) -> ListingQu
         )
     q = _rules_parse(message, metro, default_transaction_type=default_txn)
     return _merge(prior, q) if prior else q
+
+
+def _drop_foreign_geo(prior: ListingQuery, metro: str) -> ListingQuery:
+    """Defensive guard, independent of the UI's own metro-switch reset: a prior turn's
+    neighborhood/bbox/boroughs were resolved against ITS metro's geography (a named
+    neighborhood sets both `neighborhood` AND a full 4-corner bbox, per `_SYSTEM` above).
+    If `metro` is now something else — the UI failed to reset session_id/prior_state, or
+    a non-UI API client just never bothered to — blindly merging that geography in would
+    silently intersect one city's coordinates against another's listings, a combination
+    `filter_listings` can never satisfy. Worse, `_relax`'s "neighborhood" stage (see
+    routes_search.py) clears `neighborhood`/`boroughs` but never the bbox, so the ladder
+    can't rescue it either: every subsequent turn in the session would return zero rows,
+    forever, with a message that hides the real cause. Drop the geography wholesale
+    instead of merging it in as if it still applied."""
+    meta = METROS.get(metro, {})
+    bbox = meta.get("bbox")   # [min_lat, min_lng, max_lat, max_lng], per metros.yml
+    has_bbox = all([prior.min_lat, prior.max_lat, prior.min_lng, prior.max_lng])
+    bbox_is_foreign = has_bbox and bbox and not (
+        bbox[0] <= prior.min_lat <= bbox[2] and bbox[0] <= prior.max_lat <= bbox[2] and
+        bbox[1] <= prior.min_lng <= bbox[3] and bbox[1] <= prior.max_lng <= bbox[3]
+    )
+    boroughs_are_foreign = bool(prior.boroughs) and not any(
+        b in meta.get("boroughs", []) for b in prior.boroughs
+    )
+    if not (bbox_is_foreign or boroughs_are_foreign):
+        return prior
+    return prior.model_copy(update={
+        "min_lat": 0.0, "max_lat": 0.0, "min_lng": 0.0, "max_lng": 0.0,
+        "boroughs": [], "neighborhood": "",
+    })
 
 
 def _merge(prior: ListingQuery, new: ListingQuery) -> ListingQuery:
@@ -257,15 +289,31 @@ def _rules_parse(message: str, metro: str, *, default_transaction_type: str = "l
 
 # --- conversational reply -----------------------------------------------------
 
-def reply(message: str, q: ListingQuery, results: list[dict], is_near_miss: bool) -> tuple[str, list[str]]:
-    """(reply, suggestions). Keyless: a deterministic summary. Keyed: the LLM writes it."""
+def reply(message: str, q: ListingQuery, results: list[dict], is_near_miss: bool,
+          relaxed_what: str = "") -> tuple[str, list[str]]:
+    """(reply, suggestions). Keyless: a deterministic summary. Keyed: the LLM writes it.
+
+    `reply` is the ONE place the near-miss sentence gets composed — it is part of the
+    JSON API contract (`POST /api/search`), read by non-UI clients too, so it must be
+    SELF-CONTAINED: a caller reading only `reply` still has to learn a search was a near
+    miss and exactly which of their stated constraints were dropped (a near-miss result
+    VIOLATES something the user asked for, e.g. a $95/SF listing against a $64/SF cap —
+    silently handing that back is worse than returning nothing). `routes_search.py` used
+    to prepend this same sentence again on top of what this function already said, and
+    the HTML banner said it a third time — so this function says it exactly once, and
+    every other layer either stops repeating it (routes_search.py) or shrinks to a
+    non-repeating label (the `_results.html` banner)."""
     if not results:
         return ("Nothing matches those constraints in this market yet. Try widening the "
                 "size range or the rent cap.",
                 ["Widen the size range", "Raise the rent cap", "Try a nearby neighborhood"])
     if not available():
         head = results[0]
-        near = "Nothing matched exactly, so here are the closest misses. " if is_near_miss else ""
+        if is_near_miss:
+            near = (f"Nothing matched exactly — I relaxed {relaxed_what}. "
+                     if relaxed_what else "Nothing matched exactly, so here are the closest misses. ")
+        else:
+            near = ""
         return (f"{near}{len(results)} match{'es' if len(results) != 1 else ''}. "
                 f"The closest is {head.get('address')} — {head.get('rationale', '')}.",
                 ["Show only ground floor", "Raise the size cap", "Drop the rent cap"])
@@ -275,8 +323,8 @@ def reply(message: str, q: ListingQuery, results: list[dict], is_near_miss: bool
         for r in results[:8]
     )
     req = {
-        "message": message, "is_near_miss": is_near_miss, "facts": facts,
-        "model": settings.llm_model,
+        "message": message, "is_near_miss": is_near_miss, "relaxed_what": relaxed_what,
+        "facts": facts, "model": settings.llm_model,
     }
 
     def fetch():
@@ -285,11 +333,14 @@ def reply(message: str, q: ListingQuery, results: list[dict], is_near_miss: bool
             system=("You are a commercial leasing broker replying to a tenant rep. In 2-3 "
                     "sentences, summarize what these listings offer against what they asked "
                     "for, and call out the single best fit by address. If isNearMiss is true, "
-                    "say plainly that nothing matched exactly and what was relaxed. Then give "
-                    "exactly 3 short follow-up refinements, one per line, prefixed '- '. "
-                    "No preamble, no markdown headers."),
+                    "open by saying plainly that nothing matched exactly and name exactly "
+                    "what was relaxed (given below as relaxedWhat) — say it only ONCE, don't "
+                    "repeat the disclosure later in the reply. Then give exactly 3 short "
+                    "follow-up refinements, one per line, prefixed '- '. No preamble, no "
+                    "markdown headers."),
             messages=[{"role": "user", "content":
-                       f"They asked: {message}\nisNearMiss: {is_near_miss}\nMatches:\n{facts}"}],
+                       f"They asked: {message}\nisNearMiss: {is_near_miss}\n"
+                       f"relaxedWhat: {relaxed_what}\nMatches:\n{facts}"}],
         )
         text = next((b.text for b in resp.content if b.type == "text"), "")
         lines = [ln[2:].strip() for ln in text.splitlines() if ln.startswith("- ")]
@@ -310,7 +361,7 @@ def reply(message: str, q: ListingQuery, results: list[dict], is_near_miss: bool
     settings_backup = settings.anthropic_api_key
     try:
         settings.anthropic_api_key = ""      # force the keyless branch, once
-        return reply(message, q, results, is_near_miss)
+        return reply(message, q, results, is_near_miss, relaxed_what)
     finally:
         settings.anthropic_api_key = settings_backup
 

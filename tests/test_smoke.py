@@ -25,7 +25,7 @@ def test_auth_and_settings():
 
 
 def test_search_ui_and_listing_page():
-    from app import seed
+    from app import db, seed
     with TestClient(app, follow_redirects=False) as c:
         seed.seed()
         c.post("/login", data={"password": "test-pw"})
@@ -39,11 +39,45 @@ def test_search_ui_and_listing_page():
         assert "2618 NW 2nd Ave" in r.text
         assert 'id="pins"' in r.text and '"lat": 25.8015' in r.text
 
-        # the listing page renders our prose, links the original, and never re-hosts
-        with __import__("app.db", fromlist=["db"]).get_conn() as conn:
+        # the listing page renders our prose and never re-hosts. seed data is
+        # source_url='seed://...' -- a synthetic marker meaning "no broker page exists" --
+        # so the "original listing" link and its footnote must be CORRECTLY ABSENT here.
+        # The case where a real http(s) source_url DOES get linked is covered by
+        # test_listing_page_links_real_broker_source_url below.
+        with db.get_conn() as conn:
             lid = conn.execute(
                 "SELECT id FROM listing WHERE source_url='seed://mia/1'").fetchone()["id"]
         r = c.get(f"/listings/{lid}")
         assert r.status_code == 200
         assert "About the property" in r.text and "Wynwood" in r.text
-        assert "The broker's own copy and photos stay" in r.text
+        assert "original listing" not in r.text
+        assert "follow the link above" not in r.text
+
+
+def test_listing_page_links_real_broker_source_url():
+    # The spec's "always link sourceUrl" rule, for the one case that matters for a live
+    # crawl: a real http(s) source_url. The link must be rendered AND the footnote must
+    # point at it -- unlike the seed:// case above, where both are correctly absent.
+    from app import db
+    with TestClient(app, follow_redirects=False) as c:
+        db.init_db()
+        c.post("/login", data={"password": "test-pw"})
+        lid = db.save_listing(dict(
+            metro="mia", source_url="https://broker.example.com/listings/42",
+            address="42 Real Broker Ave, Miami, FL", property_type="retail", size_sf=1000,
+            our_description="Ground-floor retail near the broker's own listing page.",
+        ))
+        r = c.get(f"/listings/{lid}")
+        assert r.status_code == 200
+        assert 'href="https://broker.example.com/listings/42"' in r.text
+        assert "original listing" in r.text
+        assert "follow the link above" in r.text
+
+
+def test_new_routes_require_auth():
+    # /search, /listings/{id}, /api/listings/{id} all landed in Task 6 -- none may leak a
+    # 200 to an unauthenticated caller.
+    with TestClient(app, follow_redirects=False) as c:
+        assert c.post("/search", data={"message": "x", "metro": "nyc"}).status_code != 200
+        assert c.get("/listings/1").status_code != 200
+        assert c.get("/api/listings/1").status_code != 200

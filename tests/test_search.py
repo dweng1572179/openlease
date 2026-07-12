@@ -96,6 +96,40 @@ def test_near_miss_discloses_every_constraint_it_dropped(client):
     assert any(x["askingRent"] > asked for x in body["results"] if x["rentUnit"] == "sf_yr")
 
 
+def test_near_miss_reply_names_relaxed_constraint_exactly_once(client):
+    # The near-miss disclosure must be composed in exactly ONE place. Before the fix, the
+    # phrase was said once by routes_search.py's prepend AND once by ai.reply()'s own
+    # keyless text, so `reply` (part of the JSON API contract) doubled the sentence even
+    # before the HTML banner added a third telling. Count occurrences directly against
+    # the wire-contract `reply` field, not the HTML.
+    r = client.post("/api/search", json={
+        "message": "office around 8000 sf under $1/sf", "metro": "nyc"})
+    body = r.json()
+    assert body["isNearMiss"] is True, body["reply"]
+    reply_lower = body["reply"].lower()
+    assert reply_lower.count("nothing matched exactly") == 1, body["reply"]
+    assert "rent cap" in reply_lower, body["reply"]   # still names what was relaxed
+
+
+def test_metro_switch_drops_stale_geographic_constraint(client):
+    # A stale priorState carrying a Miami bbox (as a keyed neighborhood search would set)
+    # must not poison a follow-up scoped to a different metro. Without the fix, NYC
+    # coordinates never fall inside Miami's bbox, filter_listings returns zero rows on
+    # every subsequent turn, and even the near-miss ladder can't rescue it -- _relax's
+    # "neighborhood" stage clears neighborhood/boroughs but never the bbox.
+    stale_prior = {
+        "propertyTypes": [], "transactionType": "lease", "boroughs": [],
+        "neighborhood": "Wynwood", "minSizeSf": 0, "maxSizeSf": 0, "maxRentPerSfYr": 0,
+        "minLat": 25.7, "maxLat": 25.8, "minLng": -80.2, "maxLng": -80.1,
+        "excludeAddrStates": [], "excludeZip3": [], "excludeCities": [], "keywords": [],
+    }
+    r = client.post("/api/search", json={
+        "message": "office space", "metro": "nyc", "priorState": stale_prior})
+    body = r.json()
+    assert body["results"], "a metro switch must not carry Miami's bbox into NYC forever"
+    assert body["query"]["mustHaves"]["minLat"] == 0, "the foreign bbox must be dropped"
+
+
 def test_near_miss_ladder_terminates_when_nothing_helps(client):
     # "land" has zero listings in any metro at any size — the SIZE tier of the softness
     # ladder must not loop forever re-widening itself (it grows a MAX bound, which never

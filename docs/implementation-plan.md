@@ -1677,8 +1677,9 @@ reproduced verbatim, and the test enforces them so nobody "cleans them up" later
   - `ai.available() -> bool`
   - `ai.nl_to_query(message: str, prior_state: dict | None, metro: str) -> ListingQuery`
   - `ai.QueryExtract` (the `messages.parse` schema — all-required sentinels)
-  - `ai.reply(message: str, q: ListingQuery, results: list[dict], is_near_miss: bool) -> tuple[str, list[str]]` — `(reply_text, suggestions)`; keyless returns a deterministic summary
+  - `ai.reply(message: str, q: ListingQuery, results: list[dict], is_near_miss: bool, relaxed_what: str = "") -> tuple[str, list[str]]` — `(reply_text, suggestions)`; the ONE place the near-miss disclosure is composed (T6 review-fix pass — see `reply()`'s docstring below and `task-6-report.md`); keyless returns a deterministic summary
   - `ai._rules_parse(message: str, metro: str) -> ListingQuery` (the loudly-logged fallback)
+  - `ai._drop_foreign_geo(prior: ListingQuery, metro: str) -> ListingQuery` (T6 review-fix pass: drops a prior turn's bbox/boroughs/neighborhood when they don't belong to the current metro — the defensive server-side half of the metro-switch fix, alongside the UI's own session reset in `home.html`)
 
 - [ ] **Step 1: Write `ai.py`**
 
@@ -1833,6 +1834,8 @@ def nl_to_query(message: str, prior_state: dict | None, metro: str) -> ListingQu
     `BudgetExceeded` instead of silently spending. Either that or any other parse/API
     failure degrades to the rules parser, loudly logged (never silently)."""
     prior = ListingQuery(**prior_state) if prior_state else None
+    if prior:
+        prior = _drop_foreign_geo(prior, metro)
     # A fresh, no-prior search resolves an unstated transactionType to "lease" right here
     # (SpaceFinder's own default). A follow-up turn instead passes "" through unresolved, so
     # _merge() below can tell "the new turn restated lease" apart from "the new turn didn't
@@ -1878,6 +1881,37 @@ def nl_to_query(message: str, prior_state: dict | None, metro: str) -> ListingQu
         )
     q = _rules_parse(message, metro, default_transaction_type=default_txn)
     return _merge(prior, q) if prior else q
+
+
+def _drop_foreign_geo(prior: ListingQuery, metro: str) -> ListingQuery:
+    """Defensive guard, independent of the UI's own metro-switch reset (T6 review-fix
+    pass): a prior turn's neighborhood/bbox/boroughs were resolved against ITS metro's
+    geography (a named neighborhood sets both `neighborhood` AND a full 4-corner bbox,
+    per `_SYSTEM` above). If `metro` is now something else — the UI failed to reset
+    session_id/prior_state, or a non-UI API client just never bothered to — blindly
+    merging that geography in would silently intersect one city's coordinates against
+    another's listings, a combination `filter_listings` can never satisfy. Worse,
+    `_relax`'s "neighborhood" stage (see routes_search.py) clears
+    `neighborhood`/`boroughs` but never the bbox, so the ladder can't rescue it either:
+    every subsequent turn in the session would return zero rows, forever, with a message
+    that hides the real cause. Drop the geography wholesale instead of merging it in as
+    if it still applied."""
+    meta = METROS.get(metro, {})
+    bbox = meta.get("bbox")   # [min_lat, min_lng, max_lat, max_lng], per metros.yml
+    has_bbox = all([prior.min_lat, prior.max_lat, prior.min_lng, prior.max_lng])
+    bbox_is_foreign = has_bbox and bbox and not (
+        bbox[0] <= prior.min_lat <= bbox[2] and bbox[0] <= prior.max_lat <= bbox[2] and
+        bbox[1] <= prior.min_lng <= bbox[3] and bbox[1] <= prior.max_lng <= bbox[3]
+    )
+    boroughs_are_foreign = bool(prior.boroughs) and not any(
+        b in meta.get("boroughs", []) for b in prior.boroughs
+    )
+    if not (bbox_is_foreign or boroughs_are_foreign):
+        return prior
+    return prior.model_copy(update={
+        "min_lat": 0.0, "max_lat": 0.0, "min_lng": 0.0, "max_lng": 0.0,
+        "boroughs": [], "neighborhood": "",
+    })
 
 
 def _merge(prior: ListingQuery, new: ListingQuery) -> ListingQuery:
@@ -1942,15 +1976,32 @@ def _rules_parse(message: str, metro: str, *, default_transaction_type: str = "l
 
 # --- conversational reply -----------------------------------------------------
 
-def reply(message: str, q: ListingQuery, results: list[dict], is_near_miss: bool) -> tuple[str, list[str]]:
-    """(reply, suggestions). Keyless: a deterministic summary. Keyed: the LLM writes it."""
+def reply(message: str, q: ListingQuery, results: list[dict], is_near_miss: bool,
+          relaxed_what: str = "") -> tuple[str, list[str]]:
+    """(reply, suggestions). Keyless: a deterministic summary. Keyed: the LLM writes it.
+
+    T6 review-fix pass: `reply` is the ONE place the near-miss sentence gets composed —
+    it is part of the JSON API contract (`POST /api/search`), read by non-UI clients too,
+    so it must be SELF-CONTAINED: a caller reading only `reply` still has to learn a
+    search was a near miss and exactly which of their stated constraints were dropped (a
+    near-miss result VIOLATES something the user asked for, e.g. a $95/SF listing against
+    a $64/SF cap — silently handing that back is worse than returning nothing).
+    `routes_search.py` used to prepend this same sentence again on top of what this
+    function already said, and the HTML banner said it a third time — so this function
+    says it exactly once, and every other layer either stops repeating it
+    (`routes_search.py`) or shrinks to a non-repeating label (the `_results.html`
+    banner)."""
     if not results:
         return ("Nothing matches those constraints in this market yet. Try widening the "
                 "size range or the rent cap.",
                 ["Widen the size range", "Raise the rent cap", "Try a nearby neighborhood"])
     if not available():
         head = results[0]
-        near = "Nothing matched exactly, so here are the closest misses. " if is_near_miss else ""
+        if is_near_miss:
+            near = (f"Nothing matched exactly — I relaxed {relaxed_what}. "
+                     if relaxed_what else "Nothing matched exactly, so here are the closest misses. ")
+        else:
+            near = ""
         return (f"{near}{len(results)} match{'es' if len(results) != 1 else ''}. "
                 f"The closest is {head.get('address')} — {head.get('rationale', '')}.",
                 ["Show only ground floor", "Raise the size cap", "Drop the rent cap"])
@@ -1960,8 +2011,8 @@ def reply(message: str, q: ListingQuery, results: list[dict], is_near_miss: bool
         for r in results[:8]
     )
     req = {
-        "message": message, "is_near_miss": is_near_miss, "facts": facts,
-        "model": settings.llm_model,
+        "message": message, "is_near_miss": is_near_miss, "relaxed_what": relaxed_what,
+        "facts": facts, "model": settings.llm_model,
     }
 
     def fetch():
@@ -1970,11 +2021,14 @@ def reply(message: str, q: ListingQuery, results: list[dict], is_near_miss: bool
             system=("You are a commercial leasing broker replying to a tenant rep. In 2-3 "
                     "sentences, summarize what these listings offer against what they asked "
                     "for, and call out the single best fit by address. If isNearMiss is true, "
-                    "say plainly that nothing matched exactly and what was relaxed. Then give "
-                    "exactly 3 short follow-up refinements, one per line, prefixed '- '. "
-                    "No preamble, no markdown headers."),
+                    "open by saying plainly that nothing matched exactly and name exactly "
+                    "what was relaxed (given below as relaxedWhat) — say it only ONCE, don't "
+                    "repeat the disclosure later in the reply. Then give exactly 3 short "
+                    "follow-up refinements, one per line, prefixed '- '. No preamble, no "
+                    "markdown headers."),
             messages=[{"role": "user", "content":
-                       f"They asked: {message}\nisNearMiss: {is_near_miss}\nMatches:\n{facts}"}],
+                       f"They asked: {message}\nisNearMiss: {is_near_miss}\n"
+                       f"relaxedWhat: {relaxed_what}\nMatches:\n{facts}"}],
         )
         text = next((b.text for b in resp.content if b.type == "text"), "")
         lines = [ln[2:].strip() for ln in text.splitlines() if ln.startswith("- ")]
@@ -1995,7 +2049,7 @@ def reply(message: str, q: ListingQuery, results: list[dict], is_near_miss: bool
     settings_backup = settings.anthropic_api_key
     try:
         settings.anthropic_api_key = ""      # force the keyless branch, once
-        return reply(message, q, results, is_near_miss)
+        return reply(message, q, results, is_near_miss, relaxed_what)
     finally:
         settings.anthropic_api_key = settings_backup
 
@@ -2017,6 +2071,22 @@ def demo() -> None:
 if __name__ == "__main__":
     demo()
 ```
+
+> **Correction (T6 review-fix pass, see `task-6-report.md`):** the block above already
+> reflects two fixes made after Task 6 shipped, both to keep `reply()` and the
+> near-miss-disclosure contract honest:
+> 1. `reply()` gained a `relaxed_what: str = ""` parameter and now composes the ENTIRE
+>    near-miss sentence itself, exactly once — it used to say only "Nothing matched
+>    exactly, so here are the closest misses." (keyless) or rely on the LLM to guess
+>    (keyed, which was never even told what was relaxed), while `routes_search.py`
+>    prepended the same disclosure again and the `_results.html` banner said it a third
+>    time. See Task 5's `api_search` (below) and Task 6's `_results.html` for the other
+>    two sides of that fix.
+> 2. `_drop_foreign_geo()` is new: a defensive guard so a prior turn's bbox/boroughs
+>    (set when a keyed search names a neighborhood) can't survive into a follow-up turn
+>    scoped to a DIFFERENT metro and silently zero out every result forever. The
+>    required fix is on the UI side (`home.html` resets `session_id`/`prior_state` on a
+>    metro change) — this is the belt-and-suspenders half for any caller that skips the UI.
 
 - [ ] **Step 2: Write the failing test**
 
@@ -2623,9 +2693,11 @@ def api_search(body: SearchRequest, _=Depends(require_auth)):
         item["rationale"] = r["rationale"]
         results.append(item)
 
-    text, suggestions = ai.reply(body.message, q_used, results, is_near_miss)
-    if is_near_miss and relaxed_what:
-        text = f"Nothing matched exactly — I relaxed {relaxed_what}. {text}"
+    # ai.reply() is the ONE place that composes the near-miss sentence (T6 review-fix
+    # pass — it's part of the JSON API contract, read by non-UI clients too, so it must
+    # be self-contained). Do NOT re-prepend the disclosure here — that used to double it,
+    # and the HTML banner tripled it on top. See ai.reply()'s docstring (Task 4).
+    text, suggestions = ai.reply(body.message, q_used, results, is_near_miss, relaxed_what)
 
     must_haves = q.model_dump(by_alias=True)
     db.save_turn(session_id, metro, body.message, must_haves, text)
@@ -2764,6 +2836,18 @@ Expected first: FAIL — `No module named 'app.routes_search'`. Then `5 passed`.
 > used to 500 with `OverflowError` as the softness ladder re-widened `maxSizeSf`
 > unboundedly; it must instead exhaust the ladder and answer honestly: `results: []`,
 > `isNearMiss: false`). Expected after the fix: `6 passed`.
+>
+> **Correction (T6 review-fix pass, see `task-6-report.md`):** three more tests have
+> since landed in `tests/test_search.py`, bringing it to 9:
+> `test_near_miss_discloses_every_constraint_it_dropped` (the ladder relaxes
+> cumulatively — the disclosure must name every stage actually in force, not just the
+> last one that produced rows);
+> `test_near_miss_reply_names_relaxed_constraint_exactly_once` (asserts
+> `body["reply"].lower().count("nothing matched exactly") == 1` — regression test for the
+> doubled/tripled near-miss sentence, see `ai.reply()`'s docstring above); and
+> `test_metro_switch_drops_stale_geographic_constraint` (regression test for
+> `ai._drop_foreign_geo` — a stale Miami bbox in `priorState` must not poison a follow-up
+> scoped to NYC). Expected: `9 passed`.
 
 - [ ] **Step 6: Exercise it by hand**
 
@@ -2885,7 +2969,13 @@ tiny `hx-on` hook — no build step, no framework.
   <div class="flex flex-col min-h-0">
     <form hx-post="/search" hx-target="#results" hx-indicator="#spin"
           class="flex gap-2 items-center mb-3">
-      <select name="metro" class="rounded border-slate-300 text-sm py-2">
+      <!-- a metro change starts a NEW search: without this, a stale sessionId/priorState
+           from the old metro (e.g. a neighborhood-derived bbox) rides into the new
+           metro's turn and can zero out every result forever (see ai._drop_foreign_geo
+           for the matching server-side guard) -->
+      <select name="metro" class="rounded border-slate-300 text-sm py-2"
+              onchange="document.getElementById('session_id').value='';
+                        document.getElementById('prior_state').value='';">
         {% for key, m in metros.items() %}
         <option value="{{ key }}" {% if key == metro %}selected{% endif %}>{{ m.name }}</option>
         {% endfor %}
@@ -2957,7 +3047,10 @@ def home(request: Request, _=Depends(require_auth)):
 ```html
 <div class="mb-3 rounded-lg bg-white border p-3 text-sm">
   {% if isNearMiss %}
-  <p class="mb-1 text-xs font-medium text-amber-700">Near miss — nothing matched exactly.</p>
+  {# `reply` below already discloses what was relaxed, in full, exactly once (ai.reply()
+     is the one place that composes that sentence) -- this badge is a short label, not a
+     second telling of the same sentence. #}
+  <p class="mb-1 text-xs font-medium text-amber-700">Near miss</p>
   {% endif %}
   <p class="whitespace-pre-line">{{ reply }}</p>
   {% if suggestions %}
@@ -2977,7 +3070,7 @@ def home(request: Request, _=Depends(require_auth)):
 <script id="pins" type="application/json"
         data-session="{{ sessionId }}"
         data-must="{{ query.mustHaves | tojson | forceescape }}">
-[{% for l in results %}{"id": {{ l.id }}, "lat": {{ l.lat or 'null' }}, "lng": {{ l.lng or 'null' }},
+[{% for l in results %}{"id": {{ l.id }}, "lat": {{ l.lat if l.lat is not none else 'null' }}, "lng": {{ l.lng if l.lng is not none else 'null' }},
   "label": {{ ((l.sizeSf|string ~ ' SF') if l.sizeSf else l.address) | tojson }}}{{ "," if not loop.last }}{% endfor %}]
 </script>
 ```
@@ -3001,19 +3094,31 @@ result, it just has no pin.)
       <p class="mt-1 text-xs text-slate-600">{{ l.rationale }}</p>
     </div>
     <div class="text-right shrink-0">
-      {% if l.askingRent %}
+      {% if l.askingRent is not none %}
       <p class="text-sm font-semibold">${{ "{:,.0f}".format(l.askingRent) }}
         <span class="text-xs font-normal text-slate-400">/SF/yr</span></p>
-      {% elif l.salePrice %}
+      {% elif l.salePrice is not none %}
       <p class="text-sm font-semibold">${{ "{:,}".format(l.salePrice) }}</p>
       {% else %}
       <p class="text-xs text-slate-400">ask on request</p>
       {% endif %}
-      {% if l.walkScore %}<p class="text-[10px] text-slate-400">walk {{ l.walkScore }}</p>{% endif %}
+      {% if l.walkScore is not none %}<p class="text-[10px] text-slate-400">walk {{ l.walkScore }}</p>{% endif %}
     </div>
   </div>
 </a>
 ```
+
+> **Correction (T6 review-fix pass, see `task-6-report.md`):** both blocks above already
+> show the fixed form. `_results.html`'s near-miss banner used to read "Near miss —
+> nothing matched exactly." — a full sentence that duplicated `ai.reply()`'s own
+> disclosure (and, combined with `routes_search.py`'s now-removed prepend, said the same
+> thing THREE times on one screen); it is now a short "Near miss" label. `_results.html`'s
+> pin JSON used `{{ l.lat or 'null' }}` / `{{ l.lng or 'null' }}`, which would treat a real
+> `lat=0.0`/`lng=0.0` as "no coordinates" (theoretical for these four metros, but the same
+> bug class as the one below); both now check `is not none`. `_listing_card.html`'s
+> `{% if l.askingRent %}` / `{% if l.walkScore %}` would silently hide a legitimate
+> `walkScore` of `0` ("car-dependent", a real Walk Score, landing in Task 8) — both now
+> check `is not none`, matching `listing.html`'s own pattern below.
 
 - [ ] **Step 4: Write `templates/listing.html`**
 
@@ -3024,12 +3129,16 @@ does not publish says so.
 {% extends "base.html" %}
 {% block title %}{{ l.address }} — OpenLease{% endblock %}
 {% block content %}
+{# seed:// is a synthetic marker for demo listings with no broker page -- suppressing
+   the link there is correct. The footnote below must agree with this same test in BOTH
+   directions: it may only promise "follow the link above" when the link actually rendered. #}
+{% set has_source_link = l.sourceUrl and not l.sourceUrl.startswith('seed://') %}
 <a href="/" class="text-xs text-slate-400 hover:text-slate-700">&larr; back to search</a>
 <h1 class="mt-2 text-xl font-semibold">{{ l.address }}</h1>
 <p class="text-sm text-slate-500">
   {{ l.neighborhood or '' }}{% if l.borough %}, {{ l.borough }}{% endif %}
   · {{ metro_meta.name }}
-  {% if l.sourceUrl and not l.sourceUrl.startswith('seed://') %}
+  {% if has_source_link %}
   · <a class="text-sky-600 hover:underline" href="{{ l.sourceUrl }}" target="_blank" rel="noopener">
       original listing &nearr;</a>
   {% endif %}
@@ -3059,8 +3168,13 @@ does not publish says so.
       <h2 class="text-sm font-semibold mb-1">About the property</h2>
       <p class="text-sm text-slate-700">{{ l.description }}</p>
       <p class="mt-2 text-[10px] text-slate-400">
+        {% if has_source_link %}
         Written by OpenLease from the listing's facts. The broker's own copy and photos stay
-        on their site — follow the link above.</p>
+        on their site — follow the link above.
+        {% else %}
+        Written by OpenLease from the listing's facts. This listing has no broker page to
+        link to.
+        {% endif %}</p>
     </div>
     {% endif %}
 
@@ -3114,13 +3228,20 @@ does not publish says so.
 {% endblock %}
 ```
 
+> **Correction (T6 review-fix pass, see `task-6-report.md`):** the footnote used to
+> unconditionally read "...The broker's own copy and photos stay on their site — follow
+> the link above," pointing at a link that only rendered when `has_source_link` was true.
+> Every listing viewable before Task 9/10 land is seed data (`source_url` starting
+> `seed://`), so the page always lied. The block above now agrees with `has_source_link`
+> in both directions.
+
 - [ ] **Step 5: Extend `tests/test_smoke.py`**
 
 Append to the existing file:
 
 ```python
 def test_search_ui_and_listing_page():
-    from app import seed
+    from app import db, seed
     with TestClient(app, follow_redirects=False) as c:
         seed.seed()
         c.post("/login", data={"password": "test-pw"})
@@ -3134,15 +3255,62 @@ def test_search_ui_and_listing_page():
         assert "2618 NW 2nd Ave" in r.text
         assert 'id="pins"' in r.text and '"lat": 25.8015' in r.text
 
-        # the listing page renders our prose, links the original, and never re-hosts
-        with __import__("app.db", fromlist=["db"]).get_conn() as conn:
+        # the listing page renders our prose and never re-hosts. seed data is
+        # source_url='seed://...' -- a synthetic marker meaning "no broker page exists" --
+        # so the "original listing" link and its footnote must be CORRECTLY ABSENT here.
+        # The case where a real http(s) source_url DOES get linked is covered by
+        # test_listing_page_links_real_broker_source_url below.
+        with db.get_conn() as conn:
             lid = conn.execute(
                 "SELECT id FROM listing WHERE source_url='seed://mia/1'").fetchone()["id"]
         r = c.get(f"/listings/{lid}")
         assert r.status_code == 200
         assert "About the property" in r.text and "Wynwood" in r.text
-        assert "The broker's own copy and photos stay" in r.text
+        assert "original listing" not in r.text
+        assert "follow the link above" not in r.text
+
+
+def test_listing_page_links_real_broker_source_url():
+    # The spec's "always link sourceUrl" rule, for the one case that matters for a live
+    # crawl: a real http(s) source_url. The link must be rendered AND the footnote must
+    # point at it -- unlike the seed:// case above, where both are correctly absent.
+    from app import db
+    with TestClient(app, follow_redirects=False) as c:
+        db.init_db()
+        c.post("/login", data={"password": "test-pw"})
+        lid = db.save_listing(dict(
+            metro="mia", source_url="https://broker.example.com/listings/42",
+            address="42 Real Broker Ave, Miami, FL", property_type="retail", size_sf=1000,
+            our_description="Ground-floor retail near the broker's own listing page.",
+        ))
+        r = c.get(f"/listings/{lid}")
+        assert r.status_code == 200
+        assert 'href="https://broker.example.com/listings/42"' in r.text
+        assert "original listing" in r.text
+        assert "follow the link above" in r.text
+
+
+def test_new_routes_require_auth():
+    # /search, /listings/{id}, /api/listings/{id} all landed in Task 6 -- none may leak a
+    # 200 to an unauthenticated caller.
+    with TestClient(app, follow_redirects=False) as c:
+        assert c.post("/search", data={"message": "x", "metro": "nyc"}).status_code != 200
+        assert c.get("/listings/1").status_code != 200
+        assert c.get("/api/listings/1").status_code != 200
 ```
+
+> **Correction (T6 review-fix pass, see `task-6-report.md`):** the original assertion
+> `assert "The broker's own copy and photos stay" in r.text` no longer holds for the
+> seed:// case above once the footnote fix lands (that text is now ONLY rendered when a
+> real link is rendered) — updated to assert the opposite, and its comment corrected (the
+> original comment claimed this test "links the original," but seed:// is precisely the
+> case where the link is CORRECTLY absent). Two more tests were added:
+> `test_listing_page_links_real_broker_source_url` (the case the original test's comment
+> claimed to cover but didn't — a real http(s) `source_url`) and
+> `test_new_routes_require_auth` (auth-gating on the three routes this task added). Also,
+> the indirect `__import__("app.db", fromlist=["db"]).get_conn()` is now a plain
+> `from app import db`, matching the file's own local-import pattern (`from app import
+> seed`, two lines above it).
 
 - [ ] **Step 6: Run — expect failure, then green**
 
@@ -3151,6 +3319,9 @@ def test_search_ui_and_listing_page():
 ```
 
 Expected first: FAIL on `'id="map"'`. Then all passed.
+
+> **Correction (T6 review-fix pass):** with the three tests added above, `tests/` is now
+> 41 tests total (was 37). Expect `41 passed`.
 
 - [ ] **Step 7: Look at it**
 
@@ -3167,11 +3338,13 @@ Open http://localhost:8788, log in, switch the metro to Miami, search
 > relaxed by the near-miss ladder — see `_LADDER` in `routes_search.py`), so the other two
 > Miami seed rows (office, industrial) never qualify regardless of rent/size relaxation.
 > The listing's own ask is $95/SF/yr against the query's derived $64/SF/yr cap
-> (`$8k/mo * 12 / 1,500 SF`), so the rent-cap stage of the ladder fires and the UI
-> correctly banners "Near miss — nothing matched exactly. Nothing matched exactly — I
-> relaxed the rent cap." Expect: **one** card, **one** pin, the map fitting to Wynwood,
-> the near-miss banner naming the rent cap, and a click opening the listing page. Ctrl-C
-> when done.
+> (`$8k/mo * 12 / 1,500 SF`), so the rent-cap stage of the ladder fires. Expect: **one**
+> card, **one** pin, the map fitting to Wynwood, a small "Near miss" badge, the reply text
+> reading "Nothing matched exactly — I relaxed the rent cap. 1 match. The closest is 2618
+> NW 2nd Ave, Miami, FL — ..." (named exactly once — see the T6 review-fix pass correction
+> on `ai.reply()` in Task 4, which fixed this same scenario reading the disclosure THREE
+> times: the badge, a `routes_search.py` prepend, and `ai.reply()`'s own text), and a click
+> opening the listing page. Ctrl-C when done.
 
 - [ ] **Step 8: Commit**
 

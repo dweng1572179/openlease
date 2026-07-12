@@ -117,9 +117,11 @@ def api_search(body: SearchRequest, _=Depends(require_auth)):
         item["rationale"] = r["rationale"]
         results.append(item)
 
-    text, suggestions = ai.reply(body.message, q_used, results, is_near_miss)
-    if is_near_miss and relaxed_what:
-        text = f"Nothing matched exactly — I relaxed {relaxed_what}. {text}"
+    # ai.reply() is the ONE place that composes the near-miss sentence (it's part of the
+    # JSON API contract, read by non-UI clients too, so it must be self-contained). Do
+    # NOT re-prepend the disclosure here — that used to double it, and the HTML banner
+    # tripled it on top.
+    text, suggestions = ai.reply(body.message, q_used, results, is_near_miss, relaxed_what)
 
     must_haves = q.model_dump(by_alias=True)
     db.save_turn(session_id, metro, body.message, must_haves, text)

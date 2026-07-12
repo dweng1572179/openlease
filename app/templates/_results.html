@@ -1,6 +1,9 @@
 <div class="mb-3 rounded-lg bg-white border p-3 text-sm">
   {% if isNearMiss %}
-  <p class="mb-1 text-xs font-medium text-amber-700">Near miss — nothing matched exactly.</p>
+  {# `reply` below already discloses what was relaxed, in full, exactly once (ai.reply()
+     is the one place that composes that sentence) -- this badge is a short label, not a
+     second telling of the same sentence. #}
+  <p class="mb-1 text-xs font-medium text-amber-700">Near miss</p>
   {% endif %}
   <p class="whitespace-pre-line">{{ reply }}</p>
   {% if suggestions %}
@@ -20,6 +23,6 @@
 <script id="pins" type="application/json"
         data-session="{{ sessionId }}"
         data-must="{{ query.mustHaves | tojson | forceescape }}">
-[{% for l in results %}{"id": {{ l.id }}, "lat": {{ l.lat or 'null' }}, "lng": {{ l.lng or 'null' }},
+[{% for l in results %}{"id": {{ l.id }}, "lat": {{ l.lat if l.lat is not none else 'null' }}, "lng": {{ l.lng if l.lng is not none else 'null' }},
   "label": {{ ((l.sizeSf|string ~ ' SF') if l.sizeSf else l.address) | tojson }}}{{ "," if not loop.last }}{% endfor %}]
 </script>

@@ -1,12 +1,16 @@
 {% extends "base.html" %}
 {% block title %}{{ l.address }} — OpenLease{% endblock %}
 {% block content %}
+{# seed:// is a synthetic marker for demo listings with no broker page -- suppressing
+   the link there is correct. The footnote below must agree with this same test in BOTH
+   directions: it may only promise "follow the link above" when the link actually rendered. #}
+{% set has_source_link = l.sourceUrl and not l.sourceUrl.startswith('seed://') %}
 <a href="/" class="text-xs text-slate-400 hover:text-slate-700">&larr; back to search</a>
 <h1 class="mt-2 text-xl font-semibold">{{ l.address }}</h1>
 <p class="text-sm text-slate-500">
   {{ l.neighborhood or '' }}{% if l.borough %}, {{ l.borough }}{% endif %}
   · {{ metro_meta.name }}
-  {% if l.sourceUrl and not l.sourceUrl.startswith('seed://') %}
+  {% if has_source_link %}
   · <a class="text-sky-600 hover:underline" href="{{ l.sourceUrl }}" target="_blank" rel="noopener">
       original listing &nearr;</a>
   {% endif %}
@@ -36,8 +40,13 @@
       <h2 class="text-sm font-semibold mb-1">About the property</h2>
       <p class="text-sm text-slate-700">{{ l.description }}</p>
       <p class="mt-2 text-[10px] text-slate-400">
+        {% if has_source_link %}
         Written by OpenLease from the listing's facts. The broker's own copy and photos stay
-        on their site — follow the link above.</p>
+        on their site — follow the link above.
+        {% else %}
+        Written by OpenLease from the listing's facts. This listing has no broker page to
+        link to.
+        {% endif %}</p>
     </div>
     {% endif %}
 

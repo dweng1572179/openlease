@@ -4,7 +4,13 @@
   <div class="flex flex-col min-h-0">
     <form hx-post="/search" hx-target="#results" hx-indicator="#spin"
           class="flex gap-2 items-center mb-3">
-      <select name="metro" class="rounded border-slate-300 text-sm py-2">
+      <!-- a metro change starts a NEW search: without this, a stale sessionId/priorState
+           from the old metro (e.g. a neighborhood-derived bbox) rides into the new
+           metro's turn and can zero out every result forever (see ai._drop_foreign_geo
+           for the matching server-side guard) -->
+      <select name="metro" class="rounded border-slate-300 text-sm py-2"
+              onchange="document.getElementById('session_id').value='';
+                        document.getElementById('prior_state').value='';">
         {% for key, m in metros.items() %}
         <option value="{{ key }}" {% if key == metro %}selected{% endif %}>{{ m.name }}</option>
         {% endfor %}
