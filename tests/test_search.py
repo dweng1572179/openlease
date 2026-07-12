@@ -74,6 +74,28 @@ def test_near_miss_relaxes_and_says_so(client):
     assert body["query"]["relaxed"] == "the rent cap"
 
 
+def test_near_miss_discloses_every_constraint_it_dropped(client):
+    # The ladder relaxes CUMULATIVELY. Here the rent cap alone is not enough to surface
+    # anything, so the size stage widens on top of an already-dropped rent cap. Reporting
+    # only the last stage ("the size range") would tell the user their $1/SF ceiling still
+    # held while handing them a $95/SF listing. Every constraint actually in force must be
+    # named. Without the fix this returns "the size range" and the assertion below fails.
+    r = client.post("/api/search", json={
+        "message": "retail around 1000 sf under $1/sf", "metro": "mia"})
+    body = r.json()
+    assert body["isNearMiss"] is True, body["reply"]
+    assert body["results"], "relaxation should have found the near misses"
+
+    relaxed = body["query"]["relaxed"]
+    assert "rent cap" in relaxed, relaxed          # the dropped one it used to hide
+    assert "size range" in relaxed, relaxed
+
+    # ...and the listing we hand back really does violate the stated cap, which is exactly
+    # why the disclosure has to be complete.
+    asked = body["query"]["mustHaves"]["maxRentPerSfYr"]
+    assert any(x["askingRent"] > asked for x in body["results"] if x["rentUnit"] == "sf_yr")
+
+
 def test_near_miss_ladder_terminates_when_nothing_helps(client):
     # "land" has zero listings in any metro at any size — the SIZE tier of the softness
     # ladder must not loop forever re-widening itself (it grows a MAX bound, which never
@@ -99,3 +121,9 @@ def test_session_history_and_prior_state(client):
     assert r2["query"]["mustHaves"]["propertyTypes"] == ["retail"]   # carried forward
     sessions = client.get("/api/sessions").json()["sessions"]
     assert any(s["id"] == sid and s["turns"] == 2 for s in sessions), sessions
+
+    # ...and the single-session view round-trips both turns, in order, with their mustHaves
+    turns = client.get(f"/api/sessions/{sid}").json()["turns"]
+    assert [t["message"] for t in turns] == [
+        "retail in wynwood 1500 sf", "make it bigger — at least 5000 sf"]
+    assert turns[1]["mustHaves"]["minSizeSf"] == 5000

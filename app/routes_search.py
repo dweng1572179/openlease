@@ -85,17 +85,27 @@ def api_search(body: SearchRequest, _=Depends(require_auth)):
         # relaxed. Each stage is tried EXACTLY once, in softness order, and the ladder
         # stops the instant a relaxed query produces results — or gives up honestly
         # (0 results, isNearMiss stays False) once every stage has been tried.
+        #
+        # `applied` accumulates EVERY stage in force, not just the one that finally
+        # produced rows. Reporting only the last would be a half-truth: when the rent
+        # cap is dropped and only the later size widening yields a hit, the results are
+        # still uncapped on rent, and saying "I relaxed the size range" hands the user a
+        # listing 95x over the ceiling they stated while claiming that ceiling held.
+        applied: list[str] = []
         for stage, label in _LADDER:
             step = _relax(q_used, stage)
             if step is None:
                 continue
             q_used = step
+            applied.append(label)
             candidate_rows = db.filter_listings(q_used, metro)
             if candidate_rows:
                 rows = candidate_rows
-                relaxed_what = label
+                relaxed_what = " and ".join(applied)
                 is_near_miss = True
                 break
+        else:
+            q_used = q      # ladder gave up: nothing matched, so nothing was relaxed
 
     ranked = rank.rank_listings([r["id"] for r in rows], q_used)
     by_id = {r["id"]: r for r in rows}

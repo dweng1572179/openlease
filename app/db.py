@@ -209,6 +209,9 @@ def filter_listings(q, metro: str, limit: int = 200) -> list[dict]:
             "  END) <= ?)"
         )
         args.append(q.max_rent_per_sf_yr)
+    # All four or none: 0 is the sentinel for these, so a partial bbox fails the
+    # conjunction and is skipped entirely. A half-formed box is a silently wrong
+    # geographic filter — worse than no filter. (ai.to_query drops it as a group too.)
     if q.min_lat and q.max_lat and q.min_lng and q.max_lng:
         where.append("lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?")
         args += [q.min_lat, q.max_lat, q.min_lng, q.max_lng]
@@ -258,9 +261,20 @@ def list_sessions(limit: int = 20) -> list[dict]:
 
 
 def get_session_turns(session_id: str) -> list[dict]:
+    """Turns oldest-first, at the API boundary: the stored mustHaves is TEXT in the DB
+    and an object on the wire. Returning the raw row would leak `musthaves_json` (a
+    JSON string, snake_case) where the rest of the API serves `mustHaves` (an object)."""
     with get_conn() as conn:
         rows = conn.execute(
             "SELECT message, musthaves_json, reply, created_at FROM search_turn "
             "WHERE session_id = ? ORDER BY id", (session_id,)
         ).fetchall()
-    return [dict(r) for r in rows]
+    return [
+        {
+            "message": r["message"],
+            "mustHaves": json.loads(r["musthaves_json"]) if r["musthaves_json"] else {},
+            "reply": r["reply"],
+            "createdAt": r["created_at"],
+        }
+        for r in rows
+    ]

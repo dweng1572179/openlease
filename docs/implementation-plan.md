@@ -2447,12 +2447,23 @@ def list_sessions(limit: int = 20) -> list[dict]:
 
 
 def get_session_turns(session_id: str) -> list[dict]:
+    """Turns oldest-first, at the API boundary: the stored mustHaves is TEXT in the DB
+    and an object on the wire. Returning the raw row would leak `musthaves_json` (a
+    JSON string, snake_case) where the rest of the API serves `mustHaves` (an object)."""
     with get_conn() as conn:
         rows = conn.execute(
             "SELECT message, musthaves_json, reply, created_at FROM search_turn "
             "WHERE session_id = ? ORDER BY id", (session_id,)
         ).fetchall()
-    return [dict(r) for r in rows]
+    return [
+        {
+            "message": r["message"],
+            "mustHaves": json.loads(r["musthaves_json"]) if r["musthaves_json"] else {},
+            "reply": r["reply"],
+            "createdAt": r["created_at"],
+        }
+        for r in rows
+    ]
 ```
 
 - [ ] **Step 3: Write `routes_search.py`**
@@ -2575,13 +2586,32 @@ def api_search(body: SearchRequest, _=Depends(require_auth)):
     is_near_miss = False
     relaxed_what = ""
     q_used = q
-    while not rows:
-        step = _relax(q_used)
-        if not step:
-            break
-        q_used, relaxed_what = step
-        rows = db.filter_listings(q_used, metro)
-        is_near_miss = bool(rows)
+    if not rows:
+        # Each stage relaxes ON TOP of the prior one, and is tried EXACTLY once (see
+        # _relax's docstring: re-deriving the next stage from field state re-enters "size"
+        # forever, since max_size_sf only grows — an unbounded widen that overflows
+        # SQLite's INTEGER bind).
+        #
+        # `applied` accumulates EVERY stage in force, not just the one that finally
+        # produced rows. Reporting only the last is a half-truth: when the rent cap is
+        # dropped and only the later size widening yields a hit, the results are still
+        # uncapped on rent, and saying "I relaxed the size range" hands the user a listing
+        # 95x over the ceiling they stated while claiming that ceiling held.
+        applied: list[str] = []
+        for stage, label in _LADDER:
+            step = _relax(q_used, stage)
+            if step is None:
+                continue
+            q_used = step
+            applied.append(label)
+            candidate_rows = db.filter_listings(q_used, metro)
+            if candidate_rows:
+                rows = candidate_rows
+                relaxed_what = " and ".join(applied)
+                is_near_miss = True
+                break
+        else:
+            q_used = q      # ladder gave up: nothing matched, so nothing was relaxed
 
     ranked = rank.rank_listings([r["id"] for r in rows], q_used)
     by_id = {r["id"]: r for r in rows}
