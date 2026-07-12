@@ -576,3 +576,75 @@ def test_run_overpass_failure_is_a_loud_skip_never_a_crash_never_a_0(monkeypatch
         row = conn.execute("SELECT walk_score FROM listing WHERE source_url = ?",
                             ("https://x.example.com/1",)).fetchone()
     assert row["walk_score"] is None, "an Overpass failure must leave the score NULL, never 0"
+
+
+# --- robots.txt is FETCHED, parsed, obeyed (the fetch itself was never tested) -----------
+# Every test above preloads crawl._ROBOTS, so none of them ever exercised the fetch — which
+# is exactly how the bug below survived to a live run.
+
+def _robots_response(monkeypatch, status: int, text: str):
+    monkeypatch.setattr(crawl, "_get_robots_txt", lambda url: (status, text))
+    crawl._ROBOTS.pop("robots.example.com", None)
+
+
+def test_an_empty_disallow_means_allow_everything(monkeypatch):
+    """`Disallow:` with nothing after it is robots.txt for "you may crawl anything" —
+    it is what rexfordindustrial.com actually serves. Reading it as a blanket refusal
+    silently zeroed out entire metros."""
+    _robots_response(monkeypatch, 200, "User-agent: *\nDisallow:\n")
+    assert crawl.allowed("https://robots.example.com/properties") is True
+
+
+def test_a_group_with_no_disallow_at_all_means_allow_everything(monkeypatch):
+    """avisonyoung.us serves a User-Agent line and a Sitemap line, and no rules."""
+    _robots_response(monkeypatch, 200,
+                     "User-Agent: *\nSitemap: https://robots.example.com/sitemap.xml\n")
+    assert crawl.allowed("https://robots.example.com/web/chicago/properties-for-lease") is True
+
+
+def test_we_still_obey_a_real_disallow(monkeypatch):
+    """The fix must not turn into 'allow everything'. metro-manhattan.com disallows
+    /blog/ paths and nothing else — both halves of that must hold."""
+    _robots_response(monkeypatch, 200,
+                     "User-agent: *\nDisallow: /blog/feature/\nDisallow: /wp-admin/\n")
+    assert crawl.allowed("https://robots.example.com/") is True
+    assert crawl.allowed("https://robots.example.com/blog/feature/x") is False
+    assert crawl.allowed("https://robots.example.com/wp-admin/") is False
+
+
+def test_a_403_on_robots_txt_fails_CLOSED(monkeypatch):
+    """A refusal addressed to our own honest UA is a real refusal. Fail closed."""
+    _robots_response(monkeypatch, 403, "")
+    assert crawl.allowed("https://robots.example.com/anything") is False
+
+
+def test_no_robots_txt_at_all_means_nothing_is_forbidden(monkeypatch):
+    """404 = the site published no rules. The standard reading is 'not forbidden',
+    NOT 'forbidden'."""
+    _robots_response(monkeypatch, 404, "<!doctype html><h1>Not Found</h1>")
+    assert crawl.allowed("https://robots.example.com/listings/1") is True
+
+
+def test_robots_txt_is_requested_under_our_own_user_agent(monkeypatch):
+    """The bug: RobotFileParser.read() sends `Python-urllib/3.x`, broker WAFs 403 that on
+    sight, and RobotFileParser turns a 403 into disallow_all — so we self-blocked on sites
+    that welcomed us. We were not obeying robots.txt; we were obeying a WAF's opinion of a
+    UA we should never have sent. Ask as OpenLeaseBot: the same identity we then check
+    permissions under."""
+    seen = {}
+
+    def _fake_get(url, headers=None, timeout=None, follow_redirects=None):
+        seen["url"] = url
+        seen["ua"] = (headers or {}).get("User-Agent")
+
+        class _R:
+            status_code = 200
+            text = "User-agent: *\nDisallow:\n"
+        return _R()
+
+    monkeypatch.setattr("httpx.get", _fake_get)
+    crawl._ROBOTS.pop("robots.example.com", None)
+    assert crawl.allowed("https://robots.example.com/x") is True
+    assert seen["url"] == "https://robots.example.com/robots.txt"
+    assert seen["ua"] == settings.crawl_user_agent
+    assert "OpenLeaseBot" in seen["ua"]

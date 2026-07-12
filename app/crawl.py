@@ -41,13 +41,49 @@ def _domain(url: str) -> str:
     return urlparse(url).netloc
 
 
+def _get_robots_txt(robots_url: str) -> tuple[int, str]:
+    """Fetch robots.txt with OUR honest UA, over the same stack we fetch pages with.
+
+    NOT `RobotFileParser.read()`. That calls urllib.request.urlopen, which sends
+    `Python-urllib/3.11` — and broker-site WAFs 403 that UA on sight. RobotFileParser
+    treats a 403 as `disallow_all = True`, so we were silently self-blocking on sites
+    whose robots.txt actually WELCOMES us: rexfordindustrial.com says `Disallow:` (empty
+    = allow all), avisonyoung.us has no Disallow at all, and metro-manhattan.com only
+    disallows /blog/ paths. All three came back "disallowed" and we skipped them, which
+    zeroed out LA and Chicago entirely.
+
+    That is not obeying robots.txt — it is obeying a WAF's opinion of a User-Agent we
+    should never have been sending. We identify honestly, so we ask for robots.txt as
+    OpenLeaseBot, the same identity we then check permissions under.
+    """
+    import httpx
+    r = httpx.get(robots_url, headers={"User-Agent": settings.crawl_user_agent},
+                  timeout=20.0, follow_redirects=True)
+    return r.status_code, r.text
+
+
 def robots(url: str) -> urllib.robotparser.RobotFileParser:
     d = _domain(url)
     if d not in _ROBOTS:
         rp = urllib.robotparser.RobotFileParser()
-        rp.set_url(f"{urlparse(url).scheme}://{d}/robots.txt")
+        robots_url = f"{urlparse(url).scheme}://{d}/robots.txt"
+        rp.set_url(robots_url)
         try:
-            rp.read()
+            status, text = _get_robots_txt(robots_url)
+            if status in (401, 403):
+                # A real refusal, addressed to US, by name. Fail closed.
+                log.warning("robots.txt for %s returned %s to our own UA — treating as "
+                            "disallow", d, status)
+                rp.disallow_all = True
+            elif 400 <= status < 500:
+                # No robots.txt (404 etc). The standard reading: nothing is forbidden.
+                rp.allow_all = True
+            elif status >= 500:
+                # The site is broken, not refusing us. Don't hammer it.
+                log.warning("robots.txt for %s returned %s — treating as disallow", d, status)
+                rp.disallow_all = True
+            else:
+                rp.parse(text.splitlines())
         except Exception as e:  # noqa: BLE001 — unreadable robots.txt = we do not crawl
             log.warning("robots.txt unreadable for %s (%s) — treating as disallow", d, e)
             rp.disallow_all = True
