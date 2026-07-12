@@ -144,6 +144,30 @@ CREATE TABLE IF NOT EXISTS crawl_log (
     fetched_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_crawl_domain_day ON crawl_log(domain, fetched_at);
+
+-- Workspace (T13): saves/favorites, client-shortlist portfolios, per-listing chat.
+CREATE TABLE IF NOT EXISTS saved (
+    listing_id INTEGER PRIMARY KEY REFERENCES listing(id) ON DELETE CASCADE,
+    saved_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS portfolio (
+    id         INTEGER PRIMARY KEY,
+    name       TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS portfolio_item (
+    portfolio_id INTEGER REFERENCES portfolio(id) ON DELETE CASCADE,
+    listing_id   INTEGER REFERENCES listing(id) ON DELETE CASCADE,
+    PRIMARY KEY (portfolio_id, listing_id)
+);
+CREATE TABLE IF NOT EXISTS chat (
+    id         INTEGER PRIMARY KEY,
+    listing_id INTEGER REFERENCES listing(id) ON DELETE CASCADE,
+    role       TEXT NOT NULL,     -- user | assistant
+    content    TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_chat_listing ON chat(listing_id);
 """
 
 
@@ -391,3 +415,73 @@ def get_session_turns(session_id: str) -> list[dict]:
         }
         for r in rows
     ]
+
+
+# --- workspace: saves, portfolios, per-listing chat (T13) ----------------------
+
+def toggle_save(listing_id: int) -> bool:
+    """Returns the NEW saved state."""
+    with get_conn() as conn:
+        hit = conn.execute("SELECT 1 FROM saved WHERE listing_id = ?", (listing_id,)).fetchone()
+        if hit:
+            conn.execute("DELETE FROM saved WHERE listing_id = ?", (listing_id,))
+            return False
+        conn.execute("INSERT INTO saved (listing_id) VALUES (?)", (listing_id,))
+        return True
+
+
+def is_saved(listing_id: int) -> bool:
+    with get_conn() as conn:
+        return conn.execute("SELECT 1 FROM saved WHERE listing_id = ?",
+                            (listing_id,)).fetchone() is not None
+
+
+def list_saved(metro: str | None = None) -> list[dict]:
+    sql = ("SELECT l.* FROM listing l JOIN saved s ON s.listing_id = l.id "
+           + ("WHERE l.metro = ? " if metro else "") + "ORDER BY s.saved_at DESC")
+    with get_conn() as conn:
+        rows = conn.execute(sql, (metro,) if metro else ()).fetchall()
+    return [dict(r) for r in rows]
+
+
+def create_portfolio(name: str) -> int:
+    with get_conn() as conn:
+        return conn.execute("INSERT INTO portfolio (name) VALUES (?) RETURNING id",
+                            (name,)).fetchone()["id"]
+
+
+def add_to_portfolio(portfolio_id: int, listing_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute("INSERT INTO portfolio_item (portfolio_id, listing_id) VALUES (?, ?) "
+                     "ON CONFLICT DO NOTHING", (portfolio_id, listing_id))
+
+
+def list_portfolios() -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT p.id, p.name, p.created_at, COUNT(i.listing_id) AS n "
+            "FROM portfolio p LEFT JOIN portfolio_item i ON i.portfolio_id = p.id "
+            "GROUP BY p.id ORDER BY p.created_at DESC").fetchall()
+    return [dict(r) for r in rows]
+
+
+def portfolio_items(portfolio_id: int) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT l.* FROM listing l JOIN portfolio_item i ON i.listing_id = l.id "
+            "WHERE i.portfolio_id = ?", (portfolio_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def add_chat(listing_id: int, role: str, content: str) -> None:
+    with get_conn() as conn:
+        conn.execute("INSERT INTO chat (listing_id, role, content) VALUES (?, ?, ?)",
+                     (listing_id, role, content))
+
+
+def chat_history(listing_id: int) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT role, content, created_at FROM chat WHERE listing_id = ? ORDER BY id",
+            (listing_id,)).fetchall()
+    return [dict(r) for r in rows]

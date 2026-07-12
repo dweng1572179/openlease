@@ -88,3 +88,120 @@ def test_new_routes_require_auth():
         assert c.post("/search", data={"message": "x", "metro": "nyc"}).status_code != 200
         assert c.get("/listings/1").status_code != 200
         assert c.get("/api/listings/1").status_code != 200
+
+
+# --- Task 13: workspace (saves, portfolios, export, AI highlights, per-listing chat) ------
+
+def test_workspace_save_portfolio_export_and_chat_gate():
+    from app import db, seed
+    with TestClient(app, follow_redirects=False) as c:
+        seed.seed()
+        c.post("/login", data={"password": "test-pw"})
+        with db.get_conn() as conn:
+            lid = conn.execute(
+                "SELECT id FROM listing WHERE source_url='seed://nyc/1'").fetchone()["id"]
+
+        r = c.post(f"/listings/{lid}/save")
+        assert r.status_code == 200 and "Saved" in r.text
+        assert db.is_saved(lid) is True
+        c.post(f"/listings/{lid}/save")                 # toggles back off
+        assert db.is_saved(lid) is False
+        c.post(f"/listings/{lid}/save")
+
+        r = c.post("/portfolios", data={"name": "Acme Corp"})
+        assert r.status_code == 200 and "Acme Corp" in r.text
+
+        r = c.get("/export.csv")
+        assert r.status_code == 200
+        head, first = r.text.splitlines()[0], r.text.splitlines()[1]
+        assert "our_description" in head and "source_url" in head
+        assert "55 Gansevoort St" in first
+        # what CANNOT be exported, because it was never stored:
+        assert "photo" not in head.lower()
+
+        r = c.get("/export.xlsx")
+        assert r.status_code == 200 and r.content[:2] == b"PK"   # a real zip/xlsx
+
+        # chat with no key: the gate says so instead of failing
+        r = c.post(f"/api/listings/{lid}/ask", json={"question": "what's the ceiling height?"})
+        assert r.status_code == 200
+        assert "ANTHROPIC_API_KEY" in r.json()["answer"]
+
+
+def test_portfolio_add_and_scoped_export():
+    """The brief's routes_portfolios.py wires up POST /portfolios/{id}/add but the given
+    template snippets never call it end-to-end -- exercise the full path: create two
+    portfolios, add a listing to only one, and confirm a portfolio-scoped export contains
+    it while the OTHER portfolio's export does not (no cross-portfolio leakage)."""
+    from app import db, seed
+    with TestClient(app, follow_redirects=False) as c:
+        seed.seed()
+        c.post("/login", data={"password": "test-pw"})
+        with db.get_conn() as conn:
+            lid = conn.execute(
+                "SELECT id FROM listing WHERE source_url='seed://mia/1'").fetchone()["id"]
+
+        c.post("/portfolios", data={"name": "Wynwood shortlist"})
+        pid = db.list_portfolios()[0]["id"]
+        r = c.post(f"/portfolios/{pid}/add", data={"listing_id": lid})
+        assert r.status_code == 200 and r.json() == {"ok": True}
+
+        items = db.portfolio_items(pid)
+        assert len(items) == 1 and items[0]["id"] == lid
+
+        r = c.get(f"/export.csv?portfolio_id={pid}")
+        assert r.status_code == 200 and "2618 NW 2nd Ave" in r.text
+
+        pid2 = db.create_portfolio("Empty shortlist")
+        r = c.get(f"/export.csv?portfolio_id={pid2}")
+        assert r.status_code == 200 and "2618 NW 2nd Ave" not in r.text
+
+
+def test_saved_listing_card_never_prints_python_none_for_missing_rationale():
+    """`_listing_card.html`'s rationale line is populated per-QUERY by rank.py and is
+    never persisted on the row itself -- a listing reached via db.list_saved() (no ranking
+    pass) has rationale=NULL. A bare `{{ l.rationale }}` renders a Python None as the
+    literal text 'None' (str(None) -- Jinja does not blank out a defined-but-None value),
+    which would show up under every card on the new saved/portfolio page. Regression guard."""
+    from app import db, seed
+    with TestClient(app, follow_redirects=False) as c:
+        seed.seed()
+        c.post("/login", data={"password": "test-pw"})
+        with db.get_conn() as conn:
+            lid = conn.execute(
+                "SELECT id FROM listing WHERE source_url='seed://nyc/1'").fetchone()["id"]
+        assert db.get_listing(lid)["rationale"] is None     # never computed for this row
+
+        if not db.is_saved(lid):        # tests share one on-disk DB -- force a known state
+            c.post(f"/listings/{lid}/save")
+        assert db.is_saved(lid) is True
+        r = c.get("/portfolios")
+        assert r.status_code == 200 and "55 Gansevoort St" in r.text
+        assert ">None<" not in r.text
+
+
+def test_listing_page_shows_highlights_gate_and_saved_state(monkeypatch):
+    """Keyless: highlights are silently absent (never a crash, never invented text) and
+    the Save button reflects true saved state; the chat panel still renders its form."""
+    from app import db, registry, seed
+    monkeypatch.setattr(registry, "parcel_provider", lambda metro: None)  # see T6 note
+    with TestClient(app, follow_redirects=False) as c:
+        seed.seed()
+        c.post("/login", data={"password": "test-pw"})
+        with db.get_conn() as conn:
+            lid = conn.execute(
+                "SELECT id FROM listing WHERE source_url='seed://nyc/2'").fetchone()["id"]
+        if db.is_saved(lid):             # tests share one on-disk DB -- force a known state
+            db.toggle_save(lid)
+        assert db.is_saved(lid) is False
+
+        r = c.get(f"/listings/{lid}")
+        assert r.status_code == 200
+        assert 'name="question"' in r.text                  # the chat form is present
+        assert db.get_listing(lid)["highlights_json"] is None  # no key -> never generated
+        assert "Save</button>" in r.text                     # not yet saved
+        assert "Saved</button>" not in r.text
+
+        c.post(f"/listings/{lid}/save")
+        r = c.get(f"/listings/{lid}")
+        assert "Saved</button>" in r.text

@@ -198,3 +198,146 @@ def test_reply_budget_exceeded_falls_back_to_deterministic_summary(monkeypatch, 
 
     assert "budget" in caplog.text.lower()
     assert "2618 NW 2nd Ave" in text and len(suggestions) == 3
+
+
+# --- Task 13: per-listing highlights + RAG chat -- same cache.cached()/budget pattern ----
+
+_LISTING = {
+    "id": 7, "address": "1 Main St, Miami, FL", "neighborhood": "Wynwood",
+    "property_type": "retail", "transaction_type": "lease", "size_sf": 2400,
+    "ceiling_height_ft": 14.0, "asking_rent": 95.0, "rent_unit": "sf_yr",
+    "lease_type": "NNN", "broker_firm": "Demo Realty",
+    "our_description": "Corner retail with 40 feet of frontage.",
+}
+
+
+def test_highlights_keyless_returns_none_never_invents_text():
+    assert ai.highlights(_LISTING) is None
+
+
+def test_ask_keyless_names_the_key_and_never_fakes_an_answer():
+    out = ai.ask(_LISTING, "what's the ceiling height?", [])
+    assert "ANTHROPIC_API_KEY" in out
+
+
+def test_highlights_budget_exceeded_falls_back_to_none_and_logs_loudly(monkeypatch, tmp_path, caplog):
+    monkeypatch.setattr(settings, "db_path", str(tmp_path / "ai_highlights_budget.db"))
+    db.init_db()
+    monkeypatch.setattr(settings, "anthropic_api_key", "sk-test-key")
+    monkeypatch.setattr(settings, "monthly_budget_cents", 0)   # nothing left this month
+
+    def _must_not_be_called():
+        raise AssertionError("the Anthropic client must not run when there is nothing left to spend")
+    monkeypatch.setattr(ai, "_client", _must_not_be_called)
+
+    with caplog.at_level(logging.WARNING, logger="openlease"):
+        out = ai.highlights(_LISTING)
+
+    assert out is None
+    assert "budget" in caplog.text.lower()
+
+
+def test_ask_budget_exceeded_falls_back_honestly_and_logs_loudly(monkeypatch, tmp_path, caplog):
+    monkeypatch.setattr(settings, "db_path", str(tmp_path / "ai_ask_budget.db"))
+    db.init_db()
+    monkeypatch.setattr(settings, "anthropic_api_key", "sk-test-key")
+    monkeypatch.setattr(settings, "monthly_budget_cents", 0)
+
+    def _must_not_be_called():
+        raise AssertionError("the Anthropic client must not run when there is nothing left to spend")
+    monkeypatch.setattr(ai, "_client", _must_not_be_called)
+
+    with caplog.at_level(logging.WARNING, logger="openlease"):
+        out = ai.ask(_LISTING, "what's the ceiling height?", [])
+
+    assert "budget" in out.lower()
+    assert "budget" in caplog.text.lower()
+
+
+def test_highlights_grounded_in_our_facts_and_parses_bullets(monkeypatch, tmp_path):
+    """A fake keyed client stands in for Anthropic (hermetic -- no live network calls).
+    Confirms highlights() feeds the model _listing_facts() (never a broker-prose column --
+    there isn't one, by design) and parses '- '-prefixed bullets back into a list."""
+    monkeypatch.setattr(settings, "db_path", str(tmp_path / "ai_highlights_ok.db"))
+    db.init_db()
+    monkeypatch.setattr(settings, "anthropic_api_key", "sk-test-key")
+    monkeypatch.setattr(settings, "monthly_budget_cents", 1000)
+    seen = {}
+
+    class _Block:
+        type = "text"
+        text = "- 2,400 SF corner retail\n- 14 ft ceilings\n- NNN lease\nSome preamble line"
+
+    class _Resp:
+        content = [_Block()]
+
+    class _FakeMessages:
+        def create(self, **kwargs):
+            seen["messages"] = kwargs["messages"]
+            return _Resp()
+
+    monkeypatch.setattr(ai, "_client", lambda: type("C", (), {"messages": _FakeMessages()})())
+
+    out = ai.highlights(_LISTING)
+    assert out == ["2,400 SF corner retail", "14 ft ceilings", "NNN lease"]
+    grounding = seen["messages"][0]["content"]
+    assert "1 Main St" in grounding and "Wynwood" in grounding
+
+
+def test_ask_is_grounded_in_the_record(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "db_path", str(tmp_path / "ai_ask_ok.db"))
+    db.init_db()
+    monkeypatch.setattr(settings, "anthropic_api_key", "sk-test-key")
+    monkeypatch.setattr(settings, "monthly_budget_cents", 1000)
+    seen = {}
+
+    class _Block:
+        type = "text"
+        text = "The ceiling height is 14 ft, per the listing record."
+
+    class _Resp:
+        content = [_Block()]
+
+    class _FakeMessages:
+        def create(self, **kwargs):
+            seen["system"] = kwargs["system"]
+            seen["messages"] = kwargs["messages"]
+            return _Resp()
+
+    monkeypatch.setattr(ai, "_client", lambda: type("C", (), {"messages": _FakeMessages()})())
+
+    history = [{"role": "user", "content": "any parking?"},
+              {"role": "assistant", "content": "Not published in this record."}]
+    out = ai.ask(_LISTING, "what's the ceiling height?", history)
+    assert "14 ft" in out
+    assert "1 Main St" in seen["system"]                     # the record is IN the prompt
+    assert seen["messages"][0] == history[0]                 # prior turns replay in order
+    assert seen["messages"][-1] == {"role": "user", "content": "what's the ceiling height?"}
+
+
+def test_ask_repeated_identical_question_hits_cache_and_never_rebills(monkeypatch, tmp_path):
+    """Same cache-through discipline as nl_to_query/reply: an identical repeated question
+    (same history) must not re-invoke the paid client a second time."""
+    monkeypatch.setattr(settings, "db_path", str(tmp_path / "ai_ask_cache.db"))
+    db.init_db()
+    monkeypatch.setattr(settings, "anthropic_api_key", "sk-test-key")
+    monkeypatch.setattr(settings, "monthly_budget_cents", 1000)
+    calls = []
+
+    class _Block:
+        type = "text"
+        text = "14 ft."
+
+    class _Resp:
+        content = [_Block()]
+
+    class _FakeMessages:
+        def create(self, **kwargs):
+            calls.append(1)
+            return _Resp()
+
+    monkeypatch.setattr(ai, "_client", lambda: type("C", (), {"messages": _FakeMessages()})())
+
+    ai.ask(_LISTING, "what's the ceiling height?", [])
+    ai.ask(_LISTING, "what's the ceiling height?", [])
+    assert len(calls) == 1

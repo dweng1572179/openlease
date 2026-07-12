@@ -41,6 +41,18 @@ _PARSE_COST_CENTS = 2
 #   ~350 * 0.0005c + ~250 * 0.0025c = 0.175c + 0.625c =~ 1c -> rounded up to 2c for headroom.
 _REPLY_COST_CENTS = 2
 
+# highlights (messages.create, max_tokens=400): system prompt (~90 tok) + one listing's
+# facts block (~150-250 tok) -> ~300-350 input tokens. 3-5 short bullets are normally
+# 60-150 tokens (well under the 400 cap).
+#   ~350 * 0.0005c + ~150 * 0.0025c = 0.175c + 0.375c =~ 0.55c -> rounded up to 1c for headroom.
+_HIGHLIGHTS_COST_CENTS = 1
+
+# ask (messages.create, max_tokens=800): system prompt + RECORD (~90+300 tok) + up to 8
+# prior turns (~50-150 tok each) + the new question (~20-50 tok) -> up to ~1,700 input
+# tokens on a long thread. A grounded answer is normally 100-400 tokens (well under 800).
+#   ~1,700 * 0.0005c + ~400 * 0.0025c = 0.85c + 1c =~ 1.85c -> rounded up to 2c for headroom.
+_ASK_COST_CENTS = 2
+
 
 class QueryExtract(BaseModel):
     """The `messages.parse()` schema. Two rules are load-bearing, not style:
@@ -364,6 +376,108 @@ def reply(message: str, q: ListingQuery, results: list[dict], is_near_miss: bool
         return reply(message, q, results, is_near_miss, relaxed_what)
     finally:
         settings.anthropic_api_key = settings_backup
+
+
+# --- per-listing AI: highlights + RAG chat (T13) ------------------------------
+
+def _listing_facts(l: dict) -> str:
+    """The grounding context for chat and highlights. Note what is NOT here: the broker's
+    prose. We never had it, so the model can never launder it back out."""
+    import json as _json
+    keep = ["address", "neighborhood", "borough", "property_type", "transaction_type",
+            "size_sf", "divisible_min_sf", "divisible_max_sf", "floor", "ceiling_height_ft",
+            "asking_rent", "rent_unit", "lease_type", "sale_price", "availability_date",
+            "lease_term_months", "condition", "walk_score", "transit_score",
+            "broker_name", "broker_firm", "our_description"]
+    lines = [f"{k}: {l[k]}" for k in keep if l.get(k) is not None]
+    if l.get("score_breakdown_json"):
+        b = _json.loads(l["score_breakdown_json"])
+        lines.append("walkability by category: " + ", ".join(
+            f"{cat} {v['count']} within 1.5mi (nearest {v['nearest_m']}m)"
+            for cat, v in b.items() if v["count"]))
+    return "\n".join(lines)
+
+
+def highlights(l: dict) -> list[str] | None:
+    """3-5 bullets, generated ONCE from the facts and cached on the listing row (the
+    caller, routes_listings.listing_page, only invokes this when highlights_json is still
+    empty). This is also how we avoid ever needing the broker's copy — we write our own.
+
+    The paid call goes through cache.cached() like every other paid surface in this
+    module — it's the only place the monthly budget cap can be enforced, and a
+    refused-by-budget call degrades to "no highlights" exactly like any other fallback:
+    LOUDLY logged, never silent."""
+    if not available():
+        return None
+    facts = _listing_facts(l)
+    req = {"listing_id": l.get("id"), "facts": facts, "model": settings.llm_model}
+
+    def fetch():
+        resp = _client().messages.create(
+            model=settings.llm_model, max_tokens=400,
+            system=("Write 3-5 short bullets a tenant rep would actually care about, FROM "
+                    "THE FACTS below. One line each, prefixed '- '. No marketing language, "
+                    "no adjectives you cannot source from the data. If a fact is absent, "
+                    "do not invent it."),
+            messages=[{"role": "user", "content": facts}],
+        )
+        text = next((b.text for b in resp.content if b.type == "text"), "")
+        return [ln[2:].strip() for ln in text.splitlines() if ln.startswith("- ")][:5]
+
+    try:
+        bullets = cache.cached("anthropic", "messages.create.highlights", req, fetch,
+                               cost_cents=_HIGHLIGHTS_COST_CENTS)
+        return bullets or None
+    except cache.BudgetExceeded as e:
+        log.warning(
+            "AI highlights skipped for listing %s — monthly paid-spend cap reached (%s); "
+            "the listing page shows no highlights instead of failing.", l.get("id"), e
+        )
+        return None
+    except Exception as e:  # noqa: BLE001
+        log.warning("highlights failed (%s): %s", type(e).__name__, e)
+        return None
+
+
+def ask(l: dict, question: str, history: list[dict]) -> str:
+    """Per-listing RAG chat. NO chunking, no vector store: the enriched record fits in one
+    prompt, so 'retrieval' is one SELECT (db.get_listing). Grounded — if it isn't in the
+    record, say so; a tool that guesses is worse than one that admits it doesn't know.
+
+    Same cache.cached()/budget-cap discipline as nl_to_query/reply/highlights above."""
+    if not available():
+        return ("Chat needs an ANTHROPIC_API_KEY — paste one on the settings page. "
+                "Everything else on this page works without it.")
+    facts = _listing_facts(l)
+    trimmed_history = [{"role": h["role"], "content": h["content"]} for h in history[-8:]]
+    req = {"listing_id": l.get("id"), "question": question, "history": trimmed_history,
+           "facts": facts, "model": settings.llm_model}
+
+    def fetch():
+        resp = _client().messages.create(
+            model=settings.llm_model, max_tokens=800,
+            system=("You are answering a tenant rep's question about ONE commercial listing. "
+                    "Answer ONLY from the record below. If the record does not contain the "
+                    "answer, say plainly that this listing does not publish it and suggest "
+                    "asking the broker — never guess a number.\n\n"
+                    f"RECORD:\n{facts}"),
+            messages=[*trimmed_history, {"role": "user", "content": question}],
+        )
+        return next((b.text for b in resp.content if b.type == "text"), "")
+
+    try:
+        return cache.cached("anthropic", "messages.create.ask", req, fetch,
+                            cost_cents=_ASK_COST_CENTS)
+    except cache.BudgetExceeded as e:
+        log.warning(
+            "Per-listing chat skipped for listing %s — monthly paid-spend cap reached "
+            "(%s); telling the user instead of silently failing.", l.get("id"), e
+        )
+        return ("This month's AI budget cap has been reached — check /settings, or ask "
+                "again next month.")
+    except Exception as e:  # noqa: BLE001
+        log.warning("listing chat failed (%s): %s", type(e).__name__, e)
+        return "That request failed. Check the key on /settings, or try again."
 
 
 def demo() -> None:

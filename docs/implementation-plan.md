@@ -6813,21 +6813,41 @@ def _listing_facts(l: dict) -> str:
 
 
 def highlights(l: dict) -> list[str] | None:
-    """3-5 bullets, generated ONCE from the facts and cached on the listing row. This is
-    also how we avoid ever needing the broker's copy — we write our own."""
+    """3-5 bullets, generated ONCE from the facts and cached on the listing row (the
+    caller, routes_listings.listing_page, only invokes this when highlights_json is still
+    empty). This is also how we avoid ever needing the broker's copy — we write our own.
+
+    The paid call goes through cache.cached() like every other paid surface in this
+    module — it's the only place the monthly budget cap can be enforced, and a
+    refused-by-budget call degrades to "no highlights" exactly like any other fallback:
+    LOUDLY logged, never silent."""
     if not available():
         return None
-    try:
+    facts = _listing_facts(l)
+    req = {"listing_id": l.get("id"), "facts": facts, "model": settings.llm_model}
+
+    def fetch():
         resp = _client().messages.create(
             model=settings.llm_model, max_tokens=400,
             system=("Write 3-5 short bullets a tenant rep would actually care about, FROM "
                     "THE FACTS below. One line each, prefixed '- '. No marketing language, "
                     "no adjectives you cannot source from the data. If a fact is absent, "
                     "do not invent it."),
-            messages=[{"role": "user", "content": _listing_facts(l)}],
+            messages=[{"role": "user", "content": facts}],
         )
         text = next((b.text for b in resp.content if b.type == "text"), "")
         return [ln[2:].strip() for ln in text.splitlines() if ln.startswith("- ")][:5]
+
+    try:
+        bullets = cache.cached("anthropic", "messages.create.highlights", req, fetch,
+                               cost_cents=_HIGHLIGHTS_COST_CENTS)
+        return bullets or None
+    except cache.BudgetExceeded as e:
+        log.warning(
+            "AI highlights skipped for listing %s — monthly paid-spend cap reached (%s); "
+            "the listing page shows no highlights instead of failing.", l.get("id"), e
+        )
+        return None
     except Exception as e:  # noqa: BLE001
         log.warning("highlights failed (%s): %s", type(e).__name__, e)
         return None
@@ -6835,26 +6855,66 @@ def highlights(l: dict) -> list[str] | None:
 
 def ask(l: dict, question: str, history: list[dict]) -> str:
     """Per-listing RAG chat. NO chunking, no vector store: the enriched record fits in one
-    prompt, so 'retrieval' is one SELECT. Grounded — if it isn't in the record, say so."""
+    prompt, so 'retrieval' is one SELECT (db.get_listing). Grounded — if it isn't in the
+    record, say so; a tool that guesses is worse than one that admits it doesn't know.
+
+    Same cache.cached()/budget-cap discipline as nl_to_query/reply/highlights above."""
     if not available():
         return ("Chat needs an ANTHROPIC_API_KEY — paste one on the settings page. "
                 "Everything else on this page works without it.")
-    try:
+    facts = _listing_facts(l)
+    trimmed_history = [{"role": h["role"], "content": h["content"]} for h in history[-8:]]
+    req = {"listing_id": l.get("id"), "question": question, "history": trimmed_history,
+           "facts": facts, "model": settings.llm_model}
+
+    def fetch():
         resp = _client().messages.create(
             model=settings.llm_model, max_tokens=800,
             system=("You are answering a tenant rep's question about ONE commercial listing. "
                     "Answer ONLY from the record below. If the record does not contain the "
                     "answer, say plainly that this listing does not publish it and suggest "
                     "asking the broker — never guess a number.\n\n"
-                    f"RECORD:\n{_listing_facts(l)}"),
-            messages=[*[{"role": h["role"], "content": h["content"]} for h in history[-8:]],
-                      {"role": "user", "content": question}],
+                    f"RECORD:\n{facts}"),
+            messages=[*trimmed_history, {"role": "user", "content": question}],
         )
         return next((b.text for b in resp.content if b.type == "text"), "")
+
+    try:
+        return cache.cached("anthropic", "messages.create.ask", req, fetch,
+                            cost_cents=_ASK_COST_CENTS)
+    except cache.BudgetExceeded as e:
+        log.warning(
+            "Per-listing chat skipped for listing %s — monthly paid-spend cap reached "
+            "(%s); telling the user instead of silently failing.", l.get("id"), e
+        )
+        return ("This month's AI budget cap has been reached — check /settings, or ask "
+                "again next month.")
     except Exception as e:  # noqa: BLE001
         log.warning("listing chat failed (%s): %s", type(e).__name__, e)
         return "That request failed. Check the key on /settings, or try again."
 ```
+
+Both cost constants are sized the same way `_PARSE_COST_CENTS`/`_REPLY_COST_CENTS` are —
+see the comments above them in `ai.py`: `_HIGHLIGHTS_COST_CENTS = 1`, `_ASK_COST_CENTS = 2`.
+
+> **Correction (Task 13, verified live):** the brief's first draft had `highlights()` and
+> `ask()` call `_client().messages.create()` directly — the ONLY two paid Anthropic
+> surfaces in the whole app that would NOT go through `cache.cached()`. Every other paid
+> call (`nl_to_query`'s `messages.parse`, `reply`'s `messages.create`) is gated by the
+> monthly budget cap via `cache.cached(..., cost_cents=...)` — that's the entire point of
+> `cache.py`'s own docstring ("every provider call goes through cached()"). As drafted, a
+> user could burn unlimited real spend just by opening listing pages (`highlights`) or
+> asking questions (`ask`) after the monthly cap was already exhausted, with zero
+> enforcement and zero warning — exactly the kind of silent gap the budget guardrail
+> exists to close. Fixed in the block above: both now build a `req` dict and route the
+> paid call through `cache.cached()`, with a `cache.BudgetExceeded` branch that degrades
+> the same way every other fallback in this file does — LOUDLY logged at WARNING, never
+> silent, never a crash. This also gives both calls "never pay twice" caching for an
+> identical repeated question, same as `nl_to_query`. Verified: `test_ai.py`'s
+> `test_highlights_budget_exceeded_falls_back_to_none_and_logs_loudly` and
+> `test_ask_budget_exceeded_falls_back_honestly_and_logs_loudly` reproduce the gap against
+> the pre-fix code (both fail: the mocked client that must not be called IS called) and
+> pass against the fix above.
 
 - [ ] **Step 3: Write `export.py`** (lifted from OpenProp, CRE columns)
 
@@ -6922,8 +6982,7 @@ def save_toggle(listing_id: int, _=Depends(require_auth)):
 
 @app.get("/portfolios", response_class=HTMLResponse)
 def portfolios_page(request: Request, _=Depends(require_auth)):
-    return templates.TemplateResponse("portfolios.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "portfolios.html", {
         "portfolios": db.list_portfolios(),
         "saved": [to_api(r) for r in db.list_saved()],
         **spend_ctx(),
@@ -6941,6 +7000,16 @@ def portfolio_add(portfolio_id: int, listing_id: int = Form(...), _=Depends(requ
     db.add_to_portfolio(portfolio_id, listing_id)
     return {"ok": True}
 ```
+
+> **Correction (Task 13, verified live):** the brief's first draft of `portfolios_page`
+> called `templates.TemplateResponse("portfolios.html", {"request": request, ...})` — the
+> deprecated Starlette signature (name first, `request` folded into the context dict) that
+> Task 1's own correction (see above, ~line 507) already fixed everywhere else in the app
+> and that the project treats as a hard bar ("zero warnings" — a standing
+> `DeprecationWarning` on every `/portfolios` render would mask a real new one). Fixed in
+> the block above: `TemplateResponse(request, "portfolios.html", {...})`, `request` as the
+> first positional argument, dropped from the context dict. Verified:
+> `.venv/bin/python -m pytest tests/ -v -W error` stays at 0 warnings with this route live.
 
 ```python
 """CSV / XLSX of the saved set or a portfolio."""
@@ -7005,16 +7074,29 @@ def api_ask(listing_id: int, body: AskBody, _=Depends(require_auth)):
 @app.post("/listings/{listing_id}/ask", response_class=HTMLResponse)
 def ask_fragment(request: Request, listing_id: int, question: str = Form(...),
                  _=Depends(require_auth)):
+    from . import ai
     api_ask(listing_id, AskBody(question=question), True)
     return templates.TemplateResponse(
-        "_chat.html", {"request": request, "listing_id": listing_id,
-                       "history": db.chat_history(listing_id)})
+        request, "_chat.html", {"listing_id": listing_id, "ai_available": ai.available(),
+                                "history": db.chat_history(listing_id)})
 ```
+
+> **Correction (Task 13, verified live):** same `TemplateResponse` signature bug as
+> `portfolios_page` above — the brief's first draft passed `"_chat.html"` first with
+> `request` folded into the context dict. Fixed in the block above (`request` as the first
+> positional argument). Also added `ai_available` to the context — see the `_chat.html`
+> correction immediately below for why.
 
 `templates/_chat.html`:
 
 ```html
 <div id="chat">
+  {% if not ai_available and not history %}
+  <p class="mb-2 text-xs text-slate-400">
+    Chat needs an ANTHROPIC_API_KEY — add one on <a class="text-sky-600 hover:underline"
+    href="/settings">/settings</a> to enable this. Everything else on this page works
+    without it.</p>
+  {% endif %}
   {% for m in history %}
   <div class="mb-2 text-sm {{ 'text-slate-800' if m.role == 'assistant' else 'text-slate-500' }}">
     <span class="text-[10px] uppercase tracking-wide text-slate-400">{{ m.role }}</span>
@@ -7030,8 +7112,18 @@ def ask_fragment(request: Request, listing_id: int, question: str = Form(...),
 </div>
 ```
 
+> **Correction (Task 13, verified live):** constraint #3 ("Highlights and per-listing chat
+> ... with no key they must degrade honestly and LOUDLY — a clear 'add an Anthropic key in
+> Settings to enable this' in the UI") is only half-satisfied by the AFTER-the-fact gate
+> message that `ai.ask()` returns once someone actually asks a question (it shows up as an
+> assistant turn in `history`, via the existing keyless-fallback string). Before the first
+> question, the panel looked identical whether or not a key was configured — a user had to
+> spend a click to discover chat was disabled. Added the `{% if not ai_available and not
+> history %}` notice above so the gate is visible UP FRONT, not just after wasting an ask.
+
 In `listing.html`, inside `{% block listing_extra %}` (after the score breakdown), add the
-save button, the highlights, and the chat panel:
+save button, an "add to portfolio" control per existing portfolio, the highlights (or the
+keyless gate notice), and the chat panel:
 
 ```html
 <div class="rounded-lg border bg-white p-4">
@@ -7041,29 +7133,88 @@ save button, the highlights, and the chat panel:
             class="rounded border px-3 py-1 text-xs {{ 'bg-sky-600 text-white' if saved else 'text-slate-600' }}">
       {{ 'Saved' if saved else 'Save' }}</button>
   </div>
+
+  {% if portfolios %}
+  <div class="mb-3 flex flex-wrap items-center gap-2 text-xs">
+    <span class="text-slate-400">Add to portfolio:</span>
+    {% for p in portfolios %}
+    <span class="inline-flex items-center gap-1">
+      <button hx-post="/portfolios/{{ p.id }}/add" hx-vals='{"listing_id": {{ l.id }}}'
+              hx-swap="none" onclick="this.nextElementSibling.classList.remove('hidden')"
+              class="rounded border px-2 py-1 text-slate-600 hover:border-sky-400">
+        + {{ p.name }}</button>
+      <span class="hidden text-sky-600">added</span>
+    </span>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="mb-3 text-xs text-slate-400">
+    No portfolios yet — <a class="text-sky-600 hover:underline" href="/portfolios">create one</a>
+    to build a client shortlist.</p>
+  {% endif %}
+
   {% if l.highlights %}
   <ul class="mb-3 list-disc pl-5 text-sm text-slate-700">
     {% for h in l.highlights %}<li>{{ h }}</li>{% endfor %}
   </ul>
+  {% elif not ai_available %}
+  <p class="mb-3 text-xs text-slate-400">
+    Highlights need an ANTHROPIC_API_KEY — add one on <a class="text-sky-600 hover:underline"
+    href="/settings">/settings</a> to enable this.</p>
   {% endif %}
   {% include "_chat.html" %}
 </div>
 ```
 
-and pass `saved=db.is_saved(listing_id)` plus `history=db.chat_history(listing_id)` and
-`listing_id=listing_id` into `listing_page`'s context. Generate highlights lazily there:
+> **Correction (Task 13, verified live):** two gaps found against the task's own
+> requirements while building the live keyless walkthrough:
+>
+> 1. **No UI ever calls `POST /portfolios/{portfolio_id}/add`.** The brief defines the
+>    endpoint (Step 4) but neither `listing.html` nor `portfolios.html` renders anything
+>    that posts to it — "add it to a portfolio for your client" (the task's own framing of
+>    this feature) had no way to happen through the browser, only via a raw HTTP call.
+>    Added the "Add to portfolio" button row above: one small button per existing
+>    portfolio, `hx-vals` carrying the current listing's id, `hx-swap="none"` (the route
+>    returns `{"ok": true}`, not HTML) with a same-tick `onclick` reveal of a small "added"
+>    label for immediate feedback. Requires `portfolios=db.list_portfolios()` in
+>    `listing_page`'s context (added below).
+> 2. **Highlights had no keyless notice at all** — `{% if l.highlights %}` simply renders
+>    nothing when there's no key, which is honest but not LOUD (constraint #3 again). Added
+>    the `{% elif not ai_available %}` branch. Requires `ai_available=ai.available()` in
+>    `listing_page`'s context (added below).
+
+and pass `saved=db.is_saved(listing_id)`, `history=db.chat_history(listing_id)`,
+`listing_id=listing_id`, `portfolios=db.list_portfolios()`, and `ai_available=ai.available()`
+into `listing_page`'s context. Generate highlights lazily there:
 
 ```python
+    from . import ai
+    ...
     if not row.get("highlights_json"):
-        from . import ai
         hl = ai.highlights(row)
         if hl:
-            import json
             with db.get_conn() as conn:
                 conn.execute("UPDATE listing SET highlights_json = ? WHERE id = ?",
                              (json.dumps(hl), listing_id))
             row["highlights_json"] = json.dumps(hl)
 ```
+
+> **Correction:** `import json` moved to the top of `routes_listings.py` (already imported
+> there for `/search`'s `priorState` parsing) instead of a redundant inline import inside
+> this block.
+
+`_listing_card.html` also needed one fix, not called out anywhere above: its rationale line
+was `<p ...>{{ l.rationale }}</p>`, unguarded. `l.rationale` is computed PER QUERY by
+`rank.py` and was never persisted on the row — every listing reached via `db.list_saved()`
+or `db.portfolio_items()` (no ranking pass) has `rationale = NULL`. Jinja renders a
+defined-but-`None` value as the literal string `"None"` (confirmed: `Template("<p>{{
+l.rationale }}</p>").render(l={"rationale": None})` → `"<p>None</p>"`), which would have
+shown up as a stray "None" under every card on the new `/portfolios` page — exactly the
+"`None` ≠ 0 ≠ 'lookup failed'" class of bug the constraints call out, just showing up in a
+template instead of a provider. Fixed: `{% if l.rationale %}<p ...>{{ l.rationale }}</p>{%
+endif %}`. Covered by
+`test_saved_listing_card_never_prints_python_none_for_missing_rationale` in
+`tests/test_smoke.py`.
 
 - [ ] **Step 6: Write `templates/portfolios.html`**
 
@@ -7147,6 +7298,18 @@ def test_workspace_save_portfolio_export_and_chat_gate():
         assert r.status_code == 200
         assert "ANTHROPIC_API_KEY" in r.json()["answer"]
 ```
+
+> **Correction (Task 13, verified live):** the single test above never exercises
+> `POST /portfolios/{id}/add` (the "add it to a portfolio" workflow itself), never proves
+> the `_listing_card.html` rationale-None fix, and never proves the new `ai.py` functions
+> are grounded/budget-capped rather than just gated on `available()`. Four more tests
+> added to `tests/test_smoke.py` (`test_portfolio_add_and_scoped_export`,
+> `test_saved_listing_card_never_prints_python_none_for_missing_rationale`,
+> `test_listing_page_shows_highlights_gate_and_saved_state`) and seven to `tests/test_ai.py`
+> (keyless-honest, budget-exceeded-loudly, and fake-keyed grounded-answer/cache-hit tests
+> for both `highlights()` and `ask()`, mirroring the existing `nl_to_query`/`reply` budget
+> tests). All hermetic — no live Anthropic calls; a fake `_client()` stands in wherever a
+> keyed response is needed.
 
 - [ ] **Step 8: Run to green**
 

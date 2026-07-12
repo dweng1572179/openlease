@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Portfolios — OpenLease{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-4">
+  <h1 class="text-xl font-semibold">Saved &amp; portfolios</h1>
+  <div class="flex gap-2 text-sm">
+    <a href="/export.csv" class="rounded border px-3 py-1.5">Export CSV</a>
+    <a href="/export.xlsx" class="rounded border px-3 py-1.5">Export XLSX</a>
+  </div>
+</div>
+
+<form method="post" action="/portfolios" class="mb-6 flex gap-2">
+  <input name="name" required placeholder="New client shortlist…"
+         class="rounded border-slate-300 text-sm py-1.5">
+  <button class="rounded bg-sky-600 px-3 py-1.5 text-sm text-white">Create</button>
+</form>
+
+{% if portfolios %}
+<ul class="mb-6 space-y-1 text-sm">
+  {% for p in portfolios %}
+  <li class="flex justify-between rounded border bg-white px-3 py-2">
+    <span>{{ p.name }}</span>
+    <span class="text-slate-400">{{ p.n }} listing{{ '' if p.n == 1 else 's' }}
+      · <a class="text-sky-600" href="/export.csv?portfolio_id={{ p.id }}">csv</a></span>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+<h2 class="mb-2 text-sm font-semibold">Saved ({{ saved|length }})</h2>
+{% for l in saved %}{% include "_listing_card.html" %}{% endfor %}
+{% if not saved %}<p class="text-sm text-slate-500">Nothing saved yet.</p>{% endif %}
+{% endblock %}

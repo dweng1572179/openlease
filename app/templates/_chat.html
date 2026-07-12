@@ -1,0 +1,20 @@
+<div id="chat">
+  {% if not ai_available and not history %}
+  <p class="mb-2 text-xs text-slate-400">
+    Chat needs an ANTHROPIC_API_KEY — add one on <a class="text-sky-600 hover:underline"
+    href="/settings">/settings</a> to enable this. Everything else on this page works
+    without it.</p>
+  {% endif %}
+  {% for m in history %}
+  <div class="mb-2 text-sm {{ 'text-slate-800' if m.role == 'assistant' else 'text-slate-500' }}">
+    <span class="text-[10px] uppercase tracking-wide text-slate-400">{{ m.role }}</span>
+    <p class="whitespace-pre-line">{{ m.content }}</p>
+  </div>
+  {% endfor %}
+  <form hx-post="/listings/{{ listing_id }}/ask" hx-target="#chat" hx-swap="outerHTML"
+        class="mt-2 flex gap-2">
+    <input name="question" required placeholder="Ask about this space…"
+           class="flex-1 rounded border-slate-300 text-sm py-1.5">
+    <button class="rounded bg-slate-800 px-3 py-1.5 text-xs text-white">Ask</button>
+  </form>
+</div>

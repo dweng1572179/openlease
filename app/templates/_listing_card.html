@@ -8,7 +8,11 @@
         {% if l.propertyType %}· {{ l.propertyType }}{% endif %}
         {% if l.sizeSf %}· {{ "{:,}".format(l.sizeSf) }} SF{% endif %}
       </p>
-      <p class="mt-1 text-xs text-slate-600">{{ l.rationale }}</p>
+      {# l.rationale is computed per-QUERY by rank.py and is never persisted on the row --
+         a listing reached via db.list_saved()/portfolio_items() (T13, no ranking pass)
+         has rationale=NULL. Guard it: a bare {{ l.rationale }} would render a Python
+         None as the literal text "None" under every card on the saved/portfolio page. #}
+      {% if l.rationale %}<p class="mt-1 text-xs text-slate-600">{{ l.rationale }}</p>{% endif %}
     </div>
     <div class="text-right shrink-0">
       {% if l.askingRent is not none %}

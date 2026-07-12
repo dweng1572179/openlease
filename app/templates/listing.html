@@ -89,6 +89,45 @@
       </div>
     </div>
     {% endif %}
+
+    <div class="rounded-lg border bg-white p-4">
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="text-sm font-semibold">Ask about this space</h2>
+        <button hx-post="/listings/{{ l.id }}/save" hx-swap="outerHTML"
+                class="rounded border px-3 py-1 text-xs {{ 'bg-sky-600 text-white' if saved else 'text-slate-600' }}">
+          {{ 'Saved' if saved else 'Save' }}</button>
+      </div>
+
+      {% if portfolios %}
+      <div class="mb-3 flex flex-wrap items-center gap-2 text-xs">
+        <span class="text-slate-400">Add to portfolio:</span>
+        {% for p in portfolios %}
+        <span class="inline-flex items-center gap-1">
+          <button hx-post="/portfolios/{{ p.id }}/add" hx-vals='{"listing_id": {{ l.id }}}'
+                  hx-swap="none" onclick="this.nextElementSibling.classList.remove('hidden')"
+                  class="rounded border px-2 py-1 text-slate-600 hover:border-sky-400">
+            + {{ p.name }}</button>
+          <span class="hidden text-sky-600">added</span>
+        </span>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="mb-3 text-xs text-slate-400">
+        No portfolios yet — <a class="text-sky-600 hover:underline" href="/portfolios">create one</a>
+        to build a client shortlist.</p>
+      {% endif %}
+
+      {% if l.highlights %}
+      <ul class="mb-3 list-disc pl-5 text-sm text-slate-700">
+        {% for h in l.highlights %}<li>{{ h }}</li>{% endfor %}
+      </ul>
+      {% elif not ai_available %}
+      <p class="mb-3 text-xs text-slate-400">
+        Highlights need an ANTHROPIC_API_KEY — add one on <a class="text-sky-600 hover:underline"
+        href="/settings">/settings</a> to enable this.</p>
+      {% endif %}
+      {% include "_chat.html" %}
+    </div>
     {% endblock %}  {# T8 score breakdown, T13 chat #}
   </div>
 
