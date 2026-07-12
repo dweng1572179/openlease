@@ -37,13 +37,23 @@ def listing_page(request: Request, listing_id: int, _=Depends(require_auth)):
         from . import registry
         prov = registry.parcel_provider(row["metro"])
         if prov:
+            import logging
+            log = logging.getLogger("openlease")
             try:
                 p = prov.lookup(row["address"], row.get("lat"), row.get("lng"))
             except Exception as e:  # noqa: BLE001 — a parcel API being down must not 500 the page
-                import logging
-                logging.getLogger("openlease").warning(
+                log.warning(
                     "parcel lookup failed for listing %s (%s): %s", listing_id, type(e).__name__, e)
                 p = None
+            if p is None:
+                # A clean "no match" is a lookup FAILURE, not a structural null — but it
+                # renders identically ("No parcel matched this address"). Unlogged, a metro
+                # whose address-search field has drifted to zero matches looks exactly like
+                # a normal page load, and we'd never notice the whole metro had gone dark.
+                log.warning(
+                    "parcel lookup returned NO MATCH for listing %s (%s): %r — if this is "
+                    "every listing in this metro, the provider's address query has drifted",
+                    listing_id, row["metro"], row["address"])
             if p:
                 db.save_parcel(p)
                 with db.get_conn() as conn:

@@ -37,6 +37,27 @@ def test_nyc_normalizes_pluto():
     assert p.missing_reason == {}
 
 
+def test_a_published_field_is_never_silently_dropped():
+    """Socrata serializes numerics as decimal STRINGS, inconsistently: PLUTO gives
+    numfloors as "102.0000000" but yearbuilt as "1931". A bare `int()` cast raises on the
+    former, the helper swallowed it, and `floors` came back None — which the listing page
+    renders as "not published in this market", for a field NYC publishes on every lot.
+
+    That is a WRONG answer wearing a null's clothes, and it is exactly what this module
+    exists to prevent. `missing_reason` is what makes a null honest; a null with no reason
+    on a field the market DOES publish is a bug, not an admission.
+
+    The fixture is the Empire State Building: 102 floors, built 1931."""
+    p = parcel_nyc.normalize(_fx("nyc"))
+    assert p.floors == 102, p.floors           # int("102.0000000") raises -> was None
+    assert p.year_built == 1931
+    assert p.units and p.bldg_sqft
+    # every null this provider returns must be explained; NYC explains none because it
+    # publishes all of them.
+    for field in ("floors", "year_built", "lot_sqft", "bldg_sqft", "units"):
+        assert getattr(p, field) is not None, f"{field} is published by NYC — a null here is a bug"
+
+
 def test_la_owner_is_none_with_a_reason_not_a_failure():
     p = parcel_la.normalize(_fx("la"))
     assert p.owner_name is None

@@ -23,9 +23,15 @@ def _clean_bbl(v) -> str:
 
 def normalize(raw: dict) -> Parcel:
     def num(k, cast=float):
+        """Socrata serializes numerics as decimal STRINGS, inconsistently: PLUTO returns
+        numfloors as "102.0000000" but yearbuilt as "1931". `int("102.0000000")` raises,
+        so a bare int cast silently turned a published floor count into None — which the
+        listing page then rendered as "not published in this market" for a field NYC
+        publishes for every lot. A silently-dropped field is a WRONG answer, and this is
+        the exact failure this whole module exists to prevent. Go through float() first."""
         v = raw.get(k)
         try:
-            return cast(v) if v not in (None, "") else None
+            return cast(float(v)) if v not in (None, "") else None
         except (TypeError, ValueError):
             return None
 
