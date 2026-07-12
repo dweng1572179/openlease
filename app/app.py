@@ -100,3 +100,4 @@ def home(request: Request, _=Depends(require_auth)):
 from . import routes_settings   # noqa: E402,F401  (T1)
 from . import routes_search     # noqa: E402,F401  (T5)
 from . import routes_listings   # noqa: E402,F401  (T6)
+from . import routes_crawl      # noqa: E402,F401  (T10)

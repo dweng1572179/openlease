@@ -1,0 +1,101 @@
+# The per-domain allowlist. A domain not listed here is NEVER fetched.
+# rung: feed_wp | jsonld | html      (the ladder stops at the highest rung that works)
+# tier: default | stealth            (stealth = Cloudflare/Vercel-walled; needs `scrapling install`)
+# Verified 2026-07-11 (spec §7). robots: what robots.txt said THEN — crawl.py re-checks
+# it every run and obeys the live file, not this note.
+#
+# NON-NEGOTIABLE: no entry here may require a login, an account, or a registration/NDA
+# gate. Stealth defeats a bot-detection WAF on a PUBLIC page; it never crosses an auth
+# wall. If a site starts requiring an account, DELETE it from this file.
+
+nyc:
+  - key: ripco
+    name: RIPCO Real Estate
+    url: https://www.ripcony.com
+    feed: https://www.ripcony.com/wp-json/wp/v2/property-listings?per_page=100
+    rung: feed_wp        # 833 listings, structured, no auth, no scraping at all
+    tier: default
+    robots: allows /wp-json
+  - key: rtl
+    name: RTL Real Estate
+    url: https://www.rtl-re.com/listings
+    rung: jsonld
+    tier: default
+  - key: metro_manhattan
+    name: Metro Manhattan Office Space
+    url: https://www.metro-manhattan.com
+    rung: jsonld
+    tier: default
+  - key: ksr
+    name: KSR NY
+    url: https://www.ksrny.com
+    rung: html
+    tier: stealth        # 429-throttles aggressively; crawl_delay is doubled below
+    crawl_delay: 8
+  - key: nycretail
+    name: NYC Retail Leasing
+    url: https://www.nycretailleasing.com
+    rung: html
+    tier: stealth        # 403 to a plain fetch
+
+mia:
+  - key: metro1
+    name: Metro 1
+    url: https://metro1.com/listings
+    rung: jsonld
+    tier: default
+  - key: comras
+    name: The Comras Company
+    url: https://www.comras.com
+    rung: html
+    tier: default
+  - key: terranova
+    name: Terranova Corporation
+    url: https://www.terranovacorp.com
+    rung: html
+    tier: default
+  - key: ripco_mia
+    name: RIPCO (Miami)
+    url: https://www.ripcony.com
+    feed: https://www.ripcony.com/wp-json/wp/v2/property-listings?per_page=100&locations=Miami
+    rung: feed_wp
+    tier: default
+
+la:
+  - key: avison_la
+    name: Avison Young (LA)
+    url: https://www.avisonyoung.us/web/los-angeles/properties-for-lease
+    rung: html
+    tier: default        # server-rendered
+  - key: rexford
+    name: Rexford Industrial
+    url: https://www.rexfordindustrial.com/properties
+    rung: jsonld
+    tier: default
+  - key: westmac
+    name: WESTMAC Commercial
+    url: https://www.westmac.com/listings
+    rung: html
+    tier: default
+
+chi:
+  - key: avison_chi
+    name: Avison Young (Chicago)
+    url: https://www.avisonyoung.us/web/chicago/properties-for-lease
+    rung: html
+    tier: default
+  - key: midamerica
+    name: Mid-America Real Estate
+    url: https://www.midamericagrp.com/property-listings?saleOrLease=lease
+    rung: html
+    tier: default
+  - key: baum
+    name: Baum Realty Group
+    url: https://www.baumrealty.com/properties
+    rung: html
+    tier: default
+  - key: svn_chi
+    name: SVN Chicago
+    url: https://www.svnchicago.com/properties
+    rung: html
+    tier: default

@@ -1,0 +1,51 @@
+[
+  {
+    "id": 4821,
+    "link": "https://www.ripcony.com/property-listings/280-broadway-ground-floor-retail/",
+    "guid": {"rendered": "https://www.ripcony.com/?post_type=property-listings&p=4821"},
+    "title": {"rendered": "280 Broadway &#8211; Ground Floor Retail"},
+    "acf": {
+      "address": "280 Broadway, New York, NY",
+      "neighborhood": "Tribeca",
+      "property_type": "Retail",
+      "size": "3,200 SF",
+      "divisible_min": "1,600 SF",
+      "divisible_max": "3,200 SF",
+      "asking_rent": "$185 PSF",
+      "broker": "Jane Doe",
+      "phone": "(212) 555-0142",
+      "email": "jdoe@ripcony.com",
+      "featured_image": "https://cdn.ripcony.com/wp-content/uploads/280-broadway.jpg"
+    }
+  },
+  {
+    "id": 4835,
+    "link": "https://www.ripcony.com/property-listings/1400-broadway-office-suite/",
+    "guid": {"rendered": "https://www.ripcony.com/?post_type=property-listings&p=4835"},
+    "title": {"rendered": "1400 Broadway &#8211; Full Floor Office"},
+    "meta": {
+      "street_address": "1400 Broadway, New York, NY",
+      "submarket": "Garment District",
+      "type": "office",
+      "square_feet": "18,500",
+      "price_per_sf": "68",
+      "contact_name": "Marco Reyes",
+      "contact_phone": "(212) 555-0198",
+      "contact_email": "mreyes@ripcony.com",
+      "image": "https://cdn.ripcony.com/wp-content/uploads/1400-broadway.jpg"
+    }
+  },
+  {
+    "id": 4902,
+    "link": "https://www.ripcony.com/property-listings/990-atlantic-ave-industrial/",
+    "guid": {"rendered": "https://www.ripcony.com/?post_type=property-listings&p=4902"},
+    "title": {"rendered": "990 Atlantic Ave &#8211; Industrial / Flex"},
+    "acf": {
+      "property_address": "990 Atlantic Ave, Brooklyn, NY",
+      "neighborhood": "Bedford-Stuyvesant",
+      "type": "industrial",
+      "total_sf": "42,000",
+      "thumbnail": "https://cdn.ripcony.com/wp-content/uploads/990-atlantic.jpg"
+    }
+  }
+]

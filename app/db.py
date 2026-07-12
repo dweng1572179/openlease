@@ -121,6 +121,19 @@ CREATE TABLE IF NOT EXISTS transit_nearby (
     meters     REAL
 );
 CREATE INDEX IF NOT EXISTS idx_transit_listing ON transit_nearby(listing_id);
+
+-- Per-domain daily budget + conditional-GET bookkeeping. The cap is enforced from here,
+-- so a restart cannot reset it.
+CREATE TABLE IF NOT EXISTS crawl_log (
+    id          INTEGER PRIMARY KEY,
+    domain      TEXT NOT NULL,
+    url         TEXT NOT NULL,
+    status      INTEGER,
+    etag        TEXT,
+    last_mod    TEXT,
+    fetched_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_crawl_domain_day ON crawl_log(domain, fetched_at);
 """
 
 

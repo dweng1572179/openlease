@@ -5045,6 +5045,14 @@ one.
   - `crawl.run(metro: str | None = None, limit: int = 100) -> dict` — `{"fetched", "saved", "skipped", "errors"}`
   - `POST /api/crawl`
 
+> **Correction (Task 10):** the three `extract.from_*` signatures above are missing a
+> parameter — the actual Step 3 code (and every call site in Step 4's `crawl_source`)
+> takes a 4th positional `metro: str`, e.g. `from_wp_json(item: dict, src: dict, metro:
+> str) -> dict | None`. It has to: `_clean()` stamps `d["metro"] = metro` on every
+> extracted record, and `metro` is a `NOT NULL` column (`db.py` SCHEMA) — there is no
+> other source for it once the fixed feed URL / detail page no longer carries the metro
+> in its own data. Interface list corrected to match the code below.
+
 - [ ] **Step 1: Write `data/sources.yml`**
 
 The allowlist **is** the crawler's scope. A site not in this file is never fetched. Each
@@ -5384,6 +5392,24 @@ def describe(d: dict) -> str:
     return f"{' '.join(bits).capitalize()} at {d['address']}{tail}."
 ```
 
+> **Correction (Task 10, verified with the JSON-LD fixture below):** `describe()`'s last
+> line has a real bug — `str.capitalize()` upper-cases the FIRST character and
+> **lower-cases every other character** in the string. Run against a real result
+> (`"2,100 SF commercial space in Wicker Park"`), `.capitalize()` returns
+> `"2,100 sf commercial space in wicker park"` — it silently destroys the "SF" unit
+> abbreviation and any proper noun (a neighborhood name, here). This isn't cosmetic: T10's
+> own test (`test_broker_prose_is_never_persisted`) asserts `"Wicker Park" in
+> d["our_description"]`, which the literal code above fails (TDD RED, see
+> `task-10-report.md`). Fixed in `app/extract.py` by upper-casing only the first character
+> of the joined sentence (a no-op when that character is a digit, as it usually is here),
+> never lower-casing the rest:
+> ```python
+> sentence = " ".join(bits)
+> if sentence:
+>     sentence = sentence[0].upper() + sentence[1:]
+> return f"{sentence} at {d['address']}{tail}."
+> ```
+
 - [ ] **Step 4: Write `crawl.py`**
 
 ```python
@@ -5631,6 +5657,38 @@ def run(metro: str | None = None, limit: int = 100) -> dict:
     return stats
 ```
 
+> **Correction (Task 10, verified against the installed `scrapling==0.4.10` package):**
+> two real defects found implementing this against the pinned version, plus one scope gap
+> worth flagging rather than silently papering over:
+>
+> 1. **`Selector.css_first()` does not exist in 0.4.10.** `Selector(body).css_first("body")`
+>    raises `AttributeError: 'Selector' object has no attribute 'css_first'`. In this
+>    version `.css(selector)` returns a `Selectors` list; the first match is its `.first`
+>    property (`Optional[Selector]`). `app/crawl.py` replaces the line above with a small
+>    `_to_markdown()` helper: `Selector(body).css("body").first` (falling back to the raw
+>    `body` string if `.first` is `None`), then `.get_all_text(strip=True)` as before.
+>    (`scrapling.core.shell.Convertor` — the class the intro prose alludes to — exists but
+>    requires the `markdownify` package, which is **not** a dependency of the `fetchers`
+>    extra and is not installed; it also targets writing a file for the `scrapling extract`
+>    CLI command, not library reuse. The plan's own manual `get_all_text()` approach, once
+>    `css_first` is fixed to `.css().first`, is the correct choice — no new dependency.)
+> 2. **`import httpx` (crawl.py) and `from fastapi import BackgroundTasks` (routes_crawl.py)
+>    are unused** in the code as written — `fetch()` calls `scrapling`'s `FetcherSession`,
+>    never `httpx` directly, and `/api/crawl` returns synchronously rather than
+>    backgrounding. Both dropped.
+> 3. **Scope gap, not fixed:** none of the three extraction rungs (`from_wp_json`,
+>    `from_jsonld`, `from_html_llm`) resolves a crawled listing's address to `lat`/`lng` —
+>    T10's own "Consumes" list names `db.save_listing`, `ai`, `score.enrich`, `settings`,
+>    but never `registry.geocoder`. The `run()` code above (correctly) only calls
+>    `score.enrich(lid)` `if rec.get("lat")`, but since no rung ever sets it, **every
+>    crawled listing is stored geocode-less and never scored** until a future task adds a
+>    geocode-the-address step (via `registry.geocoder(metro)`) before `save_listing`. Left
+>    as a documented gap rather than an unrequested, unverified geocoding integration — see
+>    `task-10-report.md` for the reasoning.
+>
+> All fixes are in `app/crawl.py`; see `task-10-report.md` for the raw before/after
+> evidence (`css_first` reproduced live against the installed package).
+
 - [ ] **Step 5: Write `routes_crawl.py`**
 
 ```python
@@ -5710,6 +5768,26 @@ cat > tests/fixtures/jsonld_listing.html <<'HTML'
 </body></html>
 HTML
 ```
+
+> **Correction (Task 10, explicit scope override from the task owner):** neither live
+> capture above was run. The task instructions for this pass were explicit: *"Do NOT run
+> a live crawl in this task. I will run the real crawl separately, after review."* Hitting
+> `ripcony.com`'s wp-json endpoint or fetching a `rexford` detail page are both real
+> network calls against a real broker site, so both were replaced with hand-built
+> fixtures instead of live captures:
+>
+> - `tests/fixtures/jsonld_listing.html` is the hand-written fallback given above,
+>   verbatim (the brief already anticipates this path for the case where robots.txt
+>   disallows the detail page).
+> - `tests/fixtures/ripco_wpjson.json` has no hand-written fallback in the brief (only a
+>   live `curl`), so a synthetic 3-item WP-REST fixture was constructed by hand instead —
+>   modeled on real WordPress `wp/v2/{cpt}` response shape (`title.rendered`, `link`,
+>   `guid.rendered`) with three different field-name conventions across the three items
+>   (`acf.address`, `meta.street_address`, `acf.property_address`) specifically to
+>   exercise `from_wp_json`'s `pick()` fallback chain, not just its happy path. This is
+>   not a substitute for verifying the real endpoint's actual field names — that
+>   verification still needs a real, reviewed crawl run, which is exactly what this task
+>   was told not to do.
 
 - [ ] **Step 7: Write the test**
 
@@ -5826,6 +5904,20 @@ with db.get_conn() as c:
 
 Expected: a handful of real RIPCO listings, each with an `our_description` we wrote, a
 `source_url` pointing at the broker's page, and no `description` column anywhere.
+
+> **Correction (Task 10, explicit scope override):** Steps 9 and 10 were NOT run in this
+> pass, for the same reason as the Step 6 correction above — both hit `www.ripcony.com`
+> over the real network (`allowed()`/`_delay_for()` fetch and cache its real
+> `robots.txt`; `run()` fetches its real wp-json feed and writes rows to the DB), and the
+> task instructions were explicit that a live crawl happens separately, after review.
+> `allowed()`'s robots-obeying logic (and the crawl-delay floor, the daily cap, the
+> recrawl dedup) are instead proven HERMETICALLY in `tests/test_crawl.py`, by seeding
+> `crawl._ROBOTS` with a `RobotFileParser` built from canned lines (`.parse()`, never
+> `.read()` — no network) for a fake domain, then asserting `allowed()`/`_delay_for()`
+> read it correctly. This is a real, if partial, substitute for Step 9 — it proves the
+> mechanism works, but it is not the same as proving `ripcony.com`'s ACTUAL live
+> robots.txt permits what `sources.yml` assumes; that still needs the reviewed live run
+> the task owner will do separately.
 
 - [ ] **Step 11: Commit**
 
