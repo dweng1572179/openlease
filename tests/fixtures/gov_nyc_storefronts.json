@@ -1,0 +1,157 @@
+[
+  {
+    "filing_due_date": "2024-06-03T00:00:00.000",
+    "reporting_year": "2023",
+    "borough_block_lot": "5005430010",
+    "property_street_address_or": "271 BROAD STREET",
+    "borough": "STATEN ISLAND",
+    "zip_code": "10304",
+    "vacant_on_12_31": "YES",
+    "construction_reported": "N",
+    "primary_business_activity": "NO BUSINESS ACTIVITY IDENTIFIED",
+    "property_number": "271",
+    "property_street": "BROAD STREET",
+    "borough_1": "STATEN ISLAND",
+    "postcode": "10304",
+    "latitude": "40.6236254",
+    "longitude": "-74.0835487",
+    "lat_long": {
+      "type": "Point",
+      "coordinates": [
+        -74.0835487,
+        40.6236254
+      ]
+    },
+    "community_board": "501",
+    "council_district": "49",
+    "census_tract": "002100",
+    "bin": "5166592",
+    "bbl": "5005430010",
+    "nta": "SI0102",
+    "nbhd": "Tompkinsville-Stapleton-Clifton-Fox Hills"
+  },
+  {
+    "filing_due_date": "2024-06-03T00:00:00.000",
+    "reporting_year": "2023",
+    "borough_block_lot": "5006550014",
+    "property_street_address_or": "1366 CLOVE ROAD",
+    "borough": "STATEN ISLAND",
+    "zip_code": "10301",
+    "vacant_on_12_31": "YES",
+    "construction_reported": "N",
+    "primary_business_activity": "NO BUSINESS ACTIVITY IDENTIFIED",
+    "property_number": "1366",
+    "property_street": "CLOVE ROAD",
+    "borough_1": "STATEN ISLAND",
+    "postcode": "10301",
+    "latitude": "40.6140093",
+    "longitude": "-74.1019167",
+    "lat_long": {
+      "type": "Point",
+      "coordinates": [
+        -74.1019167,
+        40.6140093
+      ]
+    },
+    "community_board": "501",
+    "council_district": "49",
+    "census_tract": "016901",
+    "bin": "5016536",
+    "bbl": "5006550014",
+    "nta": "SI0105",
+    "nbhd": "Westerleigh-Castleton Corners"
+  },
+  {
+    "filing_due_date": "2024-06-03T00:00:00.000",
+    "reporting_year": "2023",
+    "borough_block_lot": "5001730034",
+    "property_street_address_or": "693 HENDERSON AVENUE",
+    "borough": "STATEN ISLAND",
+    "zip_code": "10310",
+    "vacant_on_12_31": "YES",
+    "construction_reported": "N",
+    "primary_business_activity": "NO BUSINESS ACTIVITY IDENTIFIED",
+    "property_number": "693",
+    "property_street": "HENDERSON AVENUE",
+    "borough_1": "STATEN ISLAND",
+    "postcode": "10310",
+    "latitude": "40.6375275",
+    "longitude": "-74.1156299",
+    "lat_long": {
+      "type": "Point",
+      "coordinates": [
+        -74.1156299,
+        40.6375275
+      ]
+    },
+    "community_board": "501",
+    "council_district": "49",
+    "census_tract": "010500",
+    "bin": "5108642",
+    "bbl": "5001730034",
+    "nta": "SI0104",
+    "nbhd": "West New Brighton-Silver Lake-Grymes Hill"
+  },
+  {
+    "filing_due_date": "2024-06-03T00:00:00.000",
+    "reporting_year": "2023",
+    "borough_block_lot": "3012540138",
+    "property_street_address_or": "796 NOSTRAND AVENUE",
+    "borough": "BROOKLYN",
+    "zip_code": "11216",
+    "vacant_on_12_31": "YES",
+    "construction_reported": "N",
+    "primary_business_activity": "NO BUSINESS ACTIVITY IDENTIFIED",
+    "property_number": "796",
+    "property_street": "NOSTRAND AVENUE",
+    "borough_1": "BROOKLYN",
+    "postcode": "11216",
+    "latitude": "40.6714127",
+    "longitude": "-73.9506128",
+    "lat_long": {
+      "type": "Point",
+      "coordinates": [
+        -73.9506128,
+        40.6714127
+      ]
+    },
+    "community_board": "308",
+    "council_district": "35",
+    "census_tract": "031702",
+    "bin": "3032268",
+    "bbl": "3012540138",
+    "nta": "BK0802",
+    "nbhd": "Crown Heights (North)"
+  },
+  {
+    "filing_due_date": "2024-06-03T00:00:00.000",
+    "reporting_year": "2023",
+    "borough_block_lot": "4036770027",
+    "property_street_address_or": "65-55 MYRTLE AVENUE",
+    "borough": "QUEENS",
+    "zip_code": "11385",
+    "vacant_on_12_31": "YES",
+    "construction_reported": "N",
+    "primary_business_activity": "NO BUSINESS ACTIVITY IDENTIFIED",
+    "property_number": "65-55",
+    "property_street": "MYRTLE AVENUE",
+    "borough_1": "QUEENS",
+    "postcode": "11385",
+    "latitude": "40.7015043",
+    "longitude": "-73.888724",
+    "lat_long": {
+      "type": "Point",
+      "coordinates": [
+        -73.888724,
+        40.7015043
+      ]
+    },
+    "community_board": "405",
+    "council_district": "30",
+    "census_tract": "057700",
+    "bin": "4089294",
+    "bbl": "4036770027",
+    "nta": "QN0503",
+    "nbhd": "Glendale"
+  }
+]

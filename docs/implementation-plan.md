@@ -5938,10 +5938,41 @@ git commit -m "feat(openlease): the fetch ladder — robots->sitemap->feed->LLM,
 Zero ToS surface, and a lead source no scraper gives you: NYC publishes a **vacancy flag**
 on every storefront in the city.
 
+**CORRECTION (verified live 2026-07-12, at implementation time) — both dataset IDs are
+real and keyless, but the field names/join key below had drifted, the same failure mode
+Task 9 found on all four metros' parcel data:**
+
+1. **`92iy-9c3n`** ("Storefronts Reported Vacant or Not") has **no**
+   `primary_business_address`, `street_number`, or `street_name` column. The real address
+   column is `property_street_address_or` (Socrata's own truncation of "Property Street
+   Address or Storefront Address" — it's the pre-joined full address, e.g. "271 BROAD
+   STREET"), with `property_number` + `property_street` as a fallback. Run the plan's
+   original code against the real response and every row's `addr` came back `""` — the
+   row-skip guard (`if not addr or not bbl: continue`) then silently dropped **all** of
+   them. Zero storefronts, not five. Also: `borough` comes back ALL CAPS
+   ("STATEN ISLAND"); the rest of the app (`metros.yml`, the hard borough filter) uses
+   Title Case ("Staten Island") — stored verbatim it can never match a `boroughs` filter,
+   so the provider now `.title()`s it.
+2. **`bnx9-e6tj`** ("ACRIS - Real Property Master") has **no** `borough`/`block`/`lot`
+   columns at all. Querying it that way returns **HTTP 400** ("Unrecognized arguments
+   [block, borough, lot]") — not an empty list, a hard failure. ACRIS is split across
+   datasets: **`8h5j-fqxa`** ("ACRIS - Real Property Legals") holds the
+   borough/block/lot → `document_id` join; `bnx9-e6tj` holds
+   `document_id` → `doc_type`/`document_amt`/`recorded_datetime`. A BBL-to-signal lookup
+   needs **both calls, in sequence** (confirmed live end-to-end against the Empire State
+   Building's BBL, 1008350041 — 5 Legals rows joined to 5 Master rows with real doc types
+   AGMT/RPTT/ASST/MLEA and a real $49,739,616.16 RPTT transfer).
+
+The code blocks below are corrected to match. See `app/providers/gov_nyc.py` for the
+final, committed version and `tests/test_import.py` for the fixture-backed regression
+tests that lock this in (built from real captured responses, not hand-written stubs).
+
 **Files:**
 - Create: `app/providers/gov_nyc.py`, `app/routes_import.py`
 - Modify: `app/app.py` (route import)
-- Test: extend `tests/test_smoke.py`
+- Test: `tests/test_import.py` (a dedicated file, not an extension of `tests/test_smoke.py`
+  as originally planned — keeps this task's fixture-heavy provider tests out of the
+  shared smoke suite other tasks also touch)
 
 **Interfaces:**
 - Consumes: `db.save_listing` (T2), `cache.cached` (T1).
@@ -5959,15 +5990,30 @@ VACANCY FLAG on every ground- and second-floor commercial space in the city.
 
   Storefront Registry (Socrata 92iy-9c3n, keyless) — address, BBL, lat/lng, business
     activity, and `vacant_on_12_31`. A vacancy is a lead.
-  ACRIS (bnx9-e6tj, keyless) — deeds and mortgages with amounts and dates. A big mortgage
-    recorded against a building with a vacant storefront is a distress signal.
+  ACRIS (keyless) — deeds and mortgages with amounts and dates. A big mortgage recorded
+    against a building with a vacant storefront is a distress signal.
+
+Verified live 2026-07-12 — the plan's field names/join key DRIFTED on both endpoints (the
+exact failure Task 9 found on all four metros' parcel data):
+
+  1. `92iy-9c3n` has no `primary_business_address`, `street_number`, or `street_name`
+     column. The real columns are `property_street_address_or` (the pre-joined full
+     address, e.g. "271 BROAD STREET") and, as a fallback, `property_number` +
+     `property_street`. Run against the field names the plan guessed, every real row's
+     address came back "" and was silently dropped — zero storefronts, not five.
+  2. `bnx9-e6tj` ("ACRIS - Real Property Master") has NO borough/block/lot columns at
+     all — querying it that way is a 400 ("Unrecognized arguments"), not an empty list.
+     ACRIS is split across datasets: `8h5j-fqxa` ("ACRIS - Real Property Legals") holds
+     the borough/block/lot -> document_id join; `bnx9-e6tj` holds
+     document_id -> doc_type/amount/date. A BBL-to-signal lookup needs both, in sequence.
 """
 import httpx
 
 from ..cache import cached
 
 STOREFRONT = "https://data.cityofnewyork.us/resource/92iy-9c3n.json"
-ACRIS = "https://data.cityofnewyork.us/resource/bnx9-e6tj.json"
+ACRIS_LEGALS = "https://data.cityofnewyork.us/resource/8h5j-fqxa.json"   # bbl -> document_id
+ACRIS = "https://data.cityofnewyork.us/resource/bnx9-e6tj.json"          # document_id -> doc
 
 
 def storefronts(limit: int = 1000, vacant_only: bool = True) -> list[dict]:
@@ -5984,8 +6030,8 @@ def storefronts(limit: int = 1000, vacant_only: bool = True) -> list[dict]:
     out = []
     for r in rows:
         bbl = r.get("bbl")
-        addr = " ".join(x for x in [r.get("primary_business_address") or
-                                    f"{r.get('street_number','')} {r.get('street_name','')}".strip()] if x)
+        addr = r.get("property_street_address_or") or (
+            f"{r.get('property_number', '')} {r.get('property_street', '')}".strip())
         lat, lng = r.get("latitude"), r.get("longitude")
         if not addr or not bbl:
             continue
@@ -5995,7 +6041,10 @@ def storefronts(limit: int = 1000, vacant_only: bool = True) -> list[dict]:
             "metro": "nyc",
             "status": "available",
             "address": addr,
-            "borough": r.get("borough"),
+            # the dataset's own borough names come back ALL CAPS ("STATEN ISLAND"); the
+            # rest of the app (metros.yml, the hard borough filter) uses Title Case
+            # ("Staten Island") — normalize here or a borough filter can never match.
+            "borough": (r.get("borough") or "").title() or None,
             "lat": float(lat) if lat else None,
             "lng": float(lng) if lng else None,
             "property_type": "retail",
@@ -6013,19 +6062,34 @@ def storefronts(limit: int = 1000, vacant_only: bool = True) -> list[dict]:
 
 def acris_signals(bbl: str) -> list[dict]:
     """Deeds/mortgages recorded against a BBL. A large recent mortgage under a vacant
-    storefront is the distress signal worth a call."""
+    storefront is the distress signal worth a call.
+
+    Two Socrata calls, not one: `8h5j-fqxa` (Legals) maps borough/block/lot -> the
+    document_ids recorded against that lot; `bnx9-e6tj` (Master) maps those document_ids
+    to doc_type/amount/date. Master alone has no BBL column to query by."""
     if not bbl or len(bbl) < 10:
         return []
     borough, block, lot = bbl[0], int(bbl[1:6]), int(bbl[6:10])
 
-    def fetch():
-        r = httpx.get(ACRIS, params={
-            "borough": borough, "block": block, "lot": lot,
-            "$order": "recorded_datetime DESC", "$limit": 20}, timeout=60.0)
+    def fetch_legals():
+        r = httpx.get(ACRIS_LEGALS, params={
+            "borough": borough, "block": block, "lot": lot, "$limit": 200}, timeout=60.0)
         r.raise_for_status()
         return r.json()
 
-    rows = cached("acris", "bbl", {"bbl": bbl}, fetch)
+    legals = cached("acris_legals", "bbl", {"bbl": bbl}, fetch_legals)
+    doc_ids = sorted({r["document_id"] for r in legals if r.get("document_id")})
+    if not doc_ids:
+        return []   # legitimate -- not every parcel has ACRIS history; never fire Master
+
+    def fetch_master():
+        where = "document_id in(" + ",".join(f"'{d}'" for d in doc_ids) + ")"
+        r = httpx.get(ACRIS, params={
+            "$where": where, "$order": "recorded_datetime DESC", "$limit": 20}, timeout=60.0)
+        r.raise_for_status()
+        return r.json()
+
+    rows = cached("acris_master", "doc_ids", {"doc_ids": doc_ids}, fetch_master)
     return [{"doc_type": r.get("doc_type"), "amount": r.get("document_amt"),
              "date": r.get("recorded_datetime")} for r in rows]
 ```
@@ -6116,12 +6180,24 @@ Add to `app.py`'s route-import block:
 from . import routes_import     # noqa: E402,F401  (T11)
 ```
 
-- [ ] **Step 3: Extend `tests/test_smoke.py`**
+- [ ] **Step 3: Write `tests/test_import.py`** (a dedicated file, not an extension of
+  `tests/test_smoke.py`)
+
+Built around real captured Socrata responses (`tests/fixtures/gov_nyc_storefronts.json`,
+`gov_nyc_acris_legals.json`, `gov_nyc_acris_master.json` — pulled once by hand, see Step 4),
+so the field-name/join-key regressions above are locked in by fixture data, not a
+hand-written stub that would have happily "passed" against the plan's wrong field names.
+Covers: `storefronts()` normalizing the real response (including the borough Title-Case
+fix and the address fallback), rows with a missing address/bbl being dropped rather than
+faked, the `vacant_only` `$where` toggle, `acris_signals()`'s two-step Legals->Master join
+(and that an empty Legals result short-circuits before ever querying Master), `POST
+/api/import/storefronts` saving leads with no invented size/rent/broker and auth-gating,
+and `import_csv`/`POST /api/import/csv`'s round trip, unmappable-file rejection,
+unmapped-column tolerance, `$`/comma-formatted numeric parsing, and unknown-metro handling.
+The CSV round-trip test itself is unchanged from the plan's original:
 
 ```python
-def test_csv_import_round_trip():
-    import io
-    from app import db
+def test_csv_import_round_trip(isolated_db):
     with TestClient(app, follow_redirects=False) as c:
         c.post("/login", data={"password": "test-pw"})
         csv_bytes = (
@@ -6141,7 +6217,7 @@ def test_csv_import_round_trip():
 - [ ] **Step 4: Run, then pull a real vacancy list**
 
 ```bash
-.venv/bin/python -m pytest tests/test_smoke.py -v
+.venv/bin/python -m pytest tests/test_import.py -v
 .venv/bin/python -c "
 from app.providers import gov_nyc
 s = gov_nyc.storefronts(limit=5)
@@ -6152,8 +6228,23 @@ print('acris:', sig[:2])
 "
 ```
 
-Expected: five vacant storefronts with BBLs, and (usually) some ACRIS documents for the
-first one. An empty ACRIS list is legitimate — not every parcel has a recent filing.
+**Actual output, live, 2026-07-12** (against the corrected code — the plan's original
+field names, run unmodified, return zero storefronts, not five):
+
+```
+5 vacant storefronts
+  271 BROAD STREET | nyc:5005430010
+  1366 CLOVE ROAD | nyc:5006550014
+  693 HENDERSON AVENUE | nyc:5001730034
+acris: []
+```
+
+An empty ACRIS list for the first result is legitimate — not every parcel has a recent
+filing (confirmed separately: the Empire State Building's BBL, which does have ACRIS
+history, round-trips through both calls correctly — see `tests/test_import.py`).
+A citywide count check (`$select=count(*)&$where=vacant_on_12_31='YES'`) returned
+**43,978** vacant storefronts citywide for the current reporting year — confirming this
+is a real, substantial lead source, not a handful of rows.
 
 - [ ] **Step 5: Commit**
 
