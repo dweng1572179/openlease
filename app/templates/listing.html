@@ -59,7 +59,37 @@
     </div>
     {% endif %}
 
-    {% block listing_extra %}{% endblock %}  {# T8 score breakdown, T13 chat #}
+    {% block listing_extra %}
+    {% if l.scoreBreakdown %}
+    <div class="rounded-lg border bg-white p-4">
+      <h2 class="text-sm font-semibold mb-2">
+        Walk Score {{ l.walkScore }}<span class="text-slate-400 font-normal"> / 100</span>
+        {% if l.transitScore %}
+        <span class="ml-3">Transit Score {{ l.transitScore }}<span class="text-slate-400 font-normal"> / 100</span></span>
+        {% endif %}
+      </h2>
+      <p class="text-xs text-slate-400 mb-3">
+        Walk Score's published 2011 methodology, computed here from OpenStreetMap. Transit
+        Score's normalization constant is an uncalibrated estimate, not a published value —
+        treat it as a ranking, not a rating.
+      </p>
+      <div class="space-y-1">
+        {% for cat, b in l.scoreBreakdown.items() %}
+        <div class="flex items-center gap-2 text-xs">
+          <span class="w-24 text-slate-500">{{ cat }}</span>
+          <div class="flex-1 h-2 rounded bg-slate-100">
+            <div class="h-2 rounded bg-sky-500"
+                 style="width: {{ (100 * b.score / b.weight) | round | int if b.weight else 0 }}%"></div>
+          </div>
+          <span class="w-28 text-right text-slate-400">
+            {% if b.nearest_m %}{{ b.count }} · nearest {{ b.nearest_m }}m{% else %}none within 1.5mi{% endif %}
+          </span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+    {% endblock %}  {# T8 score breakdown, T13 chat #}
   </div>
 
   <aside class="space-y-4">

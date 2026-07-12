@@ -3955,7 +3955,7 @@ we can check ourselves.
 - Test: `tests/test_score.py`
 
 **Interfaces:**
-- Consumes: `overpass.pois`, `rail.stations`, `osrm.drive_minutes` (T7).
+- Consumes: `overpass.pois`, `rail.stations` (T7).
 - Produces:
   - `score.decay(meters: float) -> float`
   - `score.walk_score(lat: float, lng: float, pois: list[dict]) -> tuple[int, dict]` — `(0..100, breakdown)`; breakdown is `{category: {"score": float, "weight": float, "nearest_m": float, "count": int}}`
@@ -4007,7 +4007,7 @@ WEIGHTS: dict[str, list[float]] = {
     "books":         [1.0],
     "entertainment": [1.0],
 }
-MAX_WEIGHT = sum(sum(w) for w in WEIGHTS.values())   # 14.975 — Walk Score's "sums to 15"
+MAX_WEIGHT = sum(sum(w) for w in WEIGHTS.values())   # 15.0 — Walk Score's own "sums to 15"
 MULTIPLIER = 6.67
 
 MODE_WEIGHT = {"rail": 2.0, "ferry": 1.5, "bus": 1.0}
@@ -4016,8 +4016,10 @@ MODE_WEIGHT = {"rail": 2.0, "ferry": 1.5, "bus": 1.0}
 # read trips/week from each agency's GTFS if the rankings ever look wrong.
 TRIPS_PER_WEEK = {"rail": 700.0, "ferry": 200.0, "bus": 350.0}
 # ponytail: calibration constant. The spec flags this as needing a fit against ~20 known
-# addresses; 4000 puts Midtown near 100 and a Vernon industrial block near 30. Refit with
-# `python -m app.score --calibrate` before quoting Transit Score as gospel.
+# addresses; 4000 is an EYEBALLED guess (not fit against verified ground truth) that puts
+# Midtown near 100 and a Vernon industrial block near 30. No `--calibrate` tooling exists —
+# do not quote Transit Score as gospel until someone builds that fit; until then the UI
+# label must say "a ranking, not a rating."
 TRANSIT_NORM = 4000.0
 
 
@@ -4148,6 +4150,40 @@ if __name__ == "__main__":
     demo()
 ```
 
+> **Correction (Task 8, verified live 2026-07-12):** three defects found implementing and
+> running this against the real seed listings (all fixed in `app/score.py` /
+> `templates/listing.html`, none change the published methodology or the test assertions
+> above):
+>
+> 1. **`MAX_WEIGHT`'s inline comment was wrong.** The WEIGHTS table above sums to exactly
+>    `15.0` (verified with `Decimal`, not just float tolerance) — not `14.975`. The
+>    `abs(MAX_WEIGHT - 15.0) < 0.05` test tolerance masked the stale comment. Corrected to
+>    say `15.0`.
+> 2. **The TRANSIT_NORM comment promised a `python -m app.score --calibrate` flag that was
+>    never implemented** (`__main__` only ever calls `demo()`). No dataset of ~20
+>    known-Transit-Score addresses exists to fit against, so no calibration was attempted —
+>    `TRANSIT_NORM = 4000.0` and `TRIPS_PER_WEEK` remain the eyeballed guesses the spec
+>    already flagged them as. The comment now says that plainly instead of pointing at a
+>    command that doesn't exist.
+> 3. **Step 4's listing-page copy claimed the Transit Score normalization "is calibrated,
+>    not published"** — asserting a calibration that was never done, which contradicts this
+>    same plan's own § Layer 2 note ("Normalization constant needs calibration against ~20
+>    known addresses") and the constraint against silently pretending an uncalibrated
+>    number is calibrated. Reworded to "is an uncalibrated estimate, not a published value."
+>
+> Separately (not a code defect, an operational observation): running `score.enrich()` back
+> to back for all 12 seed listings with no delay hit `overpass-api.de`'s rate limiting —
+> several calls came back `406`/`429` even with the correct `crawl_user_agent` header from
+> the Task 7 fix. Each failure surfaced as a loud `HTTPStatusError`, never a silent 0, so the
+> "empty response is an error" contract held — but a real bulk backfill needs a delay
+> between successive Overpass calls, which belongs in a future bulk-ingest task, not here.
+> With an 8s gap between listings, all 12 succeeded; see `task-8-report.md` for the full set
+> of real scores.
+>
+> One more doc-only fix: the **Interfaces** line above originally listed `osrm.drive_minutes`
+> as something `score.py` consumes. It never imports or calls it — airport drive times are
+> an unrelated feature (T7's `osrm.py`), not an input to Walk/Transit Score. Removed.
+
 - [ ] **Step 2: Write the failing test**
 
 `tests/test_score.py`:
@@ -4275,7 +4311,8 @@ In `templates/listing.html`, replace `{% block listing_extra %}{% endblock %}` w
   </h2>
   <p class="text-xs text-slate-400 mb-3">
     Walk Score's published 2011 methodology, computed here from OpenStreetMap. Transit
-    Score's normalization is calibrated, not published — treat it as a ranking, not a rating.
+    Score's normalization constant is an uncalibrated estimate, not a published value —
+    treat it as a ranking, not a rating.
   </p>
   <div class="space-y-1">
     {% for cat, b in l.scoreBreakdown.items() %}
