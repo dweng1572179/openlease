@@ -42,6 +42,50 @@ _HTML_LLM_COST_CENTS = 5
 # street address (starts with a house number). See from_wp_json's address fallback below.
 _ADDR_LIKE = re.compile(r"^\d+\s+\S")
 
+# US state codes, for reading a WP slug's trailing "-city-st".
+_STATES = {
+    "al", "ak", "az", "ar", "ca", "co", "ct", "de", "fl", "ga", "hi", "id", "il", "in",
+    "ia", "ks", "ky", "la", "me", "md", "ma", "mi", "mn", "ms", "mo", "mt", "ne", "nv",
+    "nh", "nj", "nm", "ny", "nc", "nd", "oh", "ok", "or", "pa", "ri", "sc", "sd", "tn",
+    "tx", "ut", "vt", "va", "wa", "wv", "wi", "wy", "dc",
+}
+_SLUG_ADDR = re.compile(r"^\d")
+
+
+def _slug_address(slug: str) -> str | None:
+    """A WP post slug that ends in a state code is a normalized full address:
+    "2446-broadway-new-york-ny" -> "2446 broadway new york ny". A post title usually is not
+    ("2446 Broadway" has no city). Returns None when the slug doesn't start with a house
+    number or doesn't end in a state code."""
+    parts = _slug_parts(slug)
+    if len(parts) < 3 or parts[-1] not in _STATES or not _SLUG_ADDR.match(parts[0]):
+        return None
+    return " ".join(parts)
+
+
+def _slug_state(slug: str) -> str | None:
+    """The US state a WP slug names, if any. This is the ONLY reliable signal that a
+    national feed's listing is out of market, and it has to be read BEFORE geocoding.
+
+    A metro-scoped geocoder does not decline: NYC GeoSearch, handed "302 south colonial
+    drive cleburne TX", confidently returns coordinates in Brooklyn. So a bbox check after
+    the fact cannot save us — the wrong answer is already inside the bbox. RIPCO's feed is
+    national (Cleburne TX, Panama City FL, Freehold NJ), and without this every one of them
+    was filed as New York and handed a New York Walk Score.
+    """
+    parts = _slug_parts(slug)
+    return parts[-1] if len(parts) >= 3 and parts[-1] in _STATES else None
+
+
+def _slug_parts(slug: str) -> list[str]:
+    """WordPress appends `-2`, `-3`… to a duplicate slug, so the real last token isn't
+    always last: `2732-e-15th-st-panama-city-fl-2` ends in "2", not "fl". Reading the state
+    off the raw tail let a Panama City, Florida property through as New York."""
+    parts = slug.lower().split("-")
+    while len(parts) > 1 and parts[-1].isdigit():
+        parts.pop()
+    return parts
+
 
 class ListingExtract(BaseModel):
     """Same two rules as ai.QueryExtract, for the same two reasons: no `| None` (>16
@@ -123,6 +167,15 @@ def from_wp_json(item: dict, src: dict, metro: str) -> dict | None:
         raw_addr = title
     d = {
         "address": raw_addr,
+        # The WP slug is a normalized FULL address ("2446-broadway-new-york-ny"); the title
+        # usually isn't ("2446 Broadway"). A bare street name with no city is not a
+        # resolvable address — and a metro-scoped geocoder will confidently "find" it
+        # anyway. That is how "2732 East 15th Street | Panama City Commercial Parcel" got
+        # matched to a same-named street in Brooklyn, filed under NYC, and handed a New York
+        # Walk Score. So: hand the geocoder the slug when the slug carries a city and state,
+        # and let crawl._place drop whatever falls outside the four metros.
+        "geo_hint": _slug_address(item.get("slug") or ""),
+        "geo_state": _slug_state(item.get("slug") or ""),
         "neighborhood": pick("neighborhood", "submarket"),
         "property_type": (str(pick("property_type", "type") or "").lower() or None),
         "size_sf": num(pick("size", "square_feet", "sf", "total_sf")),

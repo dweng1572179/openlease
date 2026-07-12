@@ -396,6 +396,11 @@ def _geocode(address: str, metro: str) -> tuple[float, float] | None:
         return None
 
 
+# The state each metro lives in. Used to reject a national feed's out-of-market listings
+# BEFORE we geocode them — see `_out_of_market`.
+METRO_STATE = {"nyc": "ny", "mia": "fl", "la": "ca", "chi": "il"}
+
+
 def metro_for(lat: float, lng: float) -> str | None:
     """Which of our four metros actually contains this point? None = none of them."""
     for key, meta in METROS.items():
@@ -405,13 +410,33 @@ def metro_for(lat: float, lng: float) -> str | None:
     return None
 
 
+def _out_of_market(d: dict, metro: str) -> bool:
+    """Reject a listing whose own URL says it is in another state — BEFORE geocoding it.
+
+    A bbox check after geocoding cannot catch this, because a metro-scoped geocoder does
+    not decline: NYC GeoSearch, handed "302 south colonial drive cleburne TX", returns
+    coordinates in BROOKLYN. The wrong answer is already inside the bbox by the time
+    `_place` sees it. RIPCO's feed is national, and this is the only signal that says so.
+    """
+    st = d.get("geo_state")
+    if st and st != METRO_STATE.get(metro):
+        log.info("%s: %r is in %s, not %s — dropping (out of market)",
+                 d.get("source"), d.get("address"), st.upper(), metro)
+        return True
+    return False
+
+
 def _maybe_geocode(d: dict) -> None:
     """None of the three extraction rungs (`from_wp_json`/`from_jsonld`/`from_html_llm`)
     resolves an address to lat/lng on its own — this is Task 10's own crawl-time geocode
     step, wired in right after extraction and before the listing is saved. A geocode
     failure leaves lat/lng ABSENT: the listing still saves (address, SF, ask, broker,
     source_url — the facts), it just has no map pin and no Walk Score yet."""
-    addr = d.get("address")
+    # Prefer the slug-derived full address ("2446 broadway new york ny") over the post
+    # title ("2446 Broadway"): a bare street name has no city, and a metro-scoped geocoder
+    # will find a same-named street in its own city and answer confidently. See
+    # extract._slug_address.
+    addr = d.get("geo_hint") or d.get("address")
     if not addr or d.get("lat"):
         return
     coords = _geocode(addr, d["metro"])
@@ -465,7 +490,7 @@ def crawl_source(src: dict, metro: str, limit: int = 100) -> list[dict]:
                 items = []
             for item in items[:limit]:
                 d = extract.from_wp_json(item, src, metro)
-                if d:
+                if d and not _out_of_market(d, metro):   # check BEFORE we geocode
                     _maybe_geocode(d)
                     if _place(d, metro):
                         out.append(d)
@@ -489,7 +514,7 @@ def crawl_source(src: dict, metro: str, limit: int = 100) -> list[dict]:
             except Exception:  # noqa: BLE001
                 md = body
             d = extract.from_html_llm(md, url, src, metro)
-        if d:
+        if d and not _out_of_market(d, metro):
             _maybe_geocode(d)
             if _place(d, metro):
                 out.append(d)

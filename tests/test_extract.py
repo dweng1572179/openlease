@@ -149,3 +149,33 @@ def test_html_llm_still_all_required_no_optional_field_added():
     for name, f in extract.ListingExtract.model_fields.items():
         assert f.is_required(), f"{name} gained a default while adding caching -> HANGS"
         assert "NoneType" not in str(f.annotation), f"{name} became nullable -> union-param 400"
+
+
+def test_the_slug_is_a_full_address_and_the_title_is_not():
+    """A national feed's post title is a bare street name with no city ("2732 East 15th
+    Street"). Handing that to a metro-scoped geocoder gets a confident WRONG answer: it
+    matched a same-named street in Brooklyn, so a Panama City, Florida property was filed
+    under NYC and given a New York Walk Score. The WP slug carries the city AND state, so
+    it is geocodable — and crawl._place then drops whatever falls outside the four metros."""
+    assert extract._slug_address("2446-broadway-new-york-ny") == "2446 broadway new york ny"
+    assert extract._slug_address("302-south-colonial-drive-cleburne-tx") == \
+        "302 south colonial drive cleburne tx"
+    # no state code, or no house number -> we do NOT guess
+    assert extract._slug_address("tices-corner-marketplace-431b-chestnut-ridge-road") is None
+    assert extract._slug_address("some-blog-post") is None
+    assert extract._slug_address("") is None
+
+
+def test_geo_hint_is_used_for_geocoding_and_never_stored():
+    """The hint steers the geocoder; the DISPLAYED address stays the human one. And it must
+    not leak into the listing row — save_listing only writes _LISTING_COLS."""
+    from app.db import _LISTING_COLS
+    assert "geo_hint" not in _LISTING_COLS
+
+    item = {"title": {"rendered": "2732 East 15th Street | Panama City Commercial Parcel"},
+            "slug": "2732-east-15th-street-panama-city-fl",
+            "link": "https://www.ripcony.com/property-listings/2732-east-15th-street-panama-city-fl/"}
+    src = {"key": "ripco", "name": "RIPCO", "url": "https://www.ripcony.com"}
+    d = extract.from_wp_json(item, src, "nyc")
+    assert d["geo_hint"] == "2732 east 15th street panama city fl"
+    assert d["address"].startswith("2732 East 15th Street")   # display keeps the human form

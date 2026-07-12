@@ -84,3 +84,29 @@ def test_request_identifies_itself_with_the_crawl_user_agent(isolated_db, monkey
     geosearch.geocode("350 5th Ave")
 
     assert seen["headers"]["User-Agent"] == settings.crawl_user_agent
+
+
+def test_a_wrong_street_is_rejected_not_returned(isolated_db, monkeypatch):
+    """GeoSearch only covers the five boroughs and it does NOT decline. Asked for
+    "205 Hallock Road, Stony Brook NY" it returns "205 DAHILL ROAD, Brooklyn" — a different
+    street, in a different place — with match_type "fallback" and confidence 0.8, the SAME
+    values it reports for a correct hit. So its own confidence signal cannot separate them.
+
+    Crawling a national feed under `nyc`, that meant every Long Island and out-of-state
+    address got silently pinned somewhere in Brooklyn and handed a New York Walk Score. We
+    check the one thing a geocoder cannot fudge: the street we asked for has to appear in
+    the address we got back. No match is None — never a confident wrong answer."""
+    wrong = {"features": [{
+        "geometry": {"coordinates": [-73.9803, 40.6421]},
+        "properties": {"label": "205 DAHILL ROAD, Brooklyn, NY, USA", "borough": "Brooklyn",
+                       "match_type": "fallback", "confidence": 0.8, "addendum": {}},
+    }]}
+    monkeypatch.setattr("httpx.get", lambda *a, **kw: _FakeResponse(wrong))
+    assert geosearch.geocode("205 hallock road stony brook ny") is None
+
+
+def test_an_ordinal_street_still_matches(isolated_db, monkeypatch):
+    """We ask for "350 5th Ave"; GeoSearch answers "350 5 AVENUE". Same street."""
+    monkeypatch.setattr("httpx.get", lambda *a, **kw: _FakeResponse(_ESB_FEATURE))
+    got = geosearch.geocode("350 5th Ave, New York, NY")
+    assert got and got["matched"] == "350 5 AVENUE, New York, NY, USA"

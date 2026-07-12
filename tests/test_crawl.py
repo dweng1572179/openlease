@@ -727,3 +727,22 @@ def test_the_crawler_does_not_fetch_the_brochure_pdf():
     assert crawl.is_listing_page("https://x.test/properties/a.jpg") is False
     assert crawl.is_listing_page("https://x.test/blog/hello") is False       # not inventory
     assert crawl.is_listing_page("https://x.test/listings/1?utm=x") is True  # query is fine
+
+
+def test_a_national_feed_is_filtered_by_state_BEFORE_geocoding():
+    """The bbox check alone cannot save us: a metro-scoped geocoder does not decline. NYC
+    GeoSearch, handed "302 south colonial drive cleburne TX", returns coordinates in
+    BROOKLYN — the wrong answer is already inside the bbox by the time _place sees it. The
+    listing's own URL slug names the state, and that is the only signal that says so."""
+    tx = {"address": "302 South Colonial Drive", "geo_state": "tx", "source": "ripco"}
+    assert crawl._out_of_market(tx, "nyc") is True
+
+    ny = {"address": "2446 Broadway", "geo_state": "ny", "source": "ripco"}
+    assert crawl._out_of_market(ny, "nyc") is False
+
+    fl = {"address": "2618 NW 2nd Ave", "geo_state": "fl", "source": "ripco"}
+    assert crawl._out_of_market(fl, "mia") is False      # Florida IS Miami's state
+    assert crawl._out_of_market(fl, "chi") is True       # ...but not Chicago's
+
+    unknown = {"address": "somewhere", "source": "x"}    # no slug state -> we don't guess
+    assert crawl._out_of_market(unknown, "nyc") is False
