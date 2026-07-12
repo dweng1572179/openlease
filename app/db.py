@@ -84,6 +84,16 @@ CREATE TRIGGER IF NOT EXISTS listing_fts_au AFTER UPDATE ON listing BEGIN
     VALUES (new.id, new.address, new.our_description, new.neighborhood);
 END;
 
+-- float32 BLOBs, L2-normalized at write. Present only with a VOYAGE_API_KEY.
+-- Deliberately NOT sqlite-vec: that needs enable_load_extension, which is ABSENT on stock
+-- python.org macOS / pyenv / system python. It would work in Docker and break on the
+-- user's Mac — the worst failure mode there is — and buys nothing at 5k rows, where a
+-- brute-force numpy matmul is 0.84ms (T12).
+CREATE TABLE IF NOT EXISTS listing_vec (
+    listing_id INTEGER PRIMARY KEY REFERENCES listing(id) ON DELETE CASCADE,
+    embedding  BLOB NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS search_session (
     id          TEXT PRIMARY KEY,      -- the client's sessionId
     metro       TEXT NOT NULL,
@@ -210,6 +220,45 @@ def get_listing(listing_id: int) -> dict | None:
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM listing WHERE id = ?", (listing_id,)).fetchone()
     return dict(row) if row else None
+
+
+# --- semantic vectors (T12) ----------------------------------------------------
+# numpy is a hard requirement (requirements.txt) but imported lazily here so a keyless
+# boot never pays for it before a listing is actually embedded.
+
+def save_vector(listing_id: int, vec) -> None:
+    """Store `vec` L2-normalized as a float32 BLOB, so `cosine_ids`'s brute-force
+    `M @ q` is a plain dot product (both sides already unit-length) — no per-query norm."""
+    import numpy as np
+    arr = np.asarray(vec, dtype=np.float32)
+    n = float(np.linalg.norm(arr))
+    if n:
+        arr = arr / n                      # L2-normalize at WRITE
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO listing_vec (listing_id, embedding) VALUES (?, ?) "
+            "ON CONFLICT(listing_id) DO UPDATE SET embedding = excluded.embedding",
+            (listing_id, arr.tobytes()),
+        )
+
+
+def load_vectors(ids: list[int]):
+    """-> (ids_present, M) where M is (n, dim) float32, row i = ids_present[i]. Ids with
+    no stored vector are simply absent, never a zero row."""
+    import numpy as np
+    if not ids:
+        return [], np.zeros((0, 0), dtype=np.float32)
+    holes = ",".join("?" * len(ids))
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"SELECT listing_id, embedding FROM listing_vec WHERE listing_id IN ({holes})",
+            ids,
+        ).fetchall()
+    if not rows:
+        return [], np.zeros((0, 0), dtype=np.float32)
+    got = [r["listing_id"] for r in rows]
+    M = np.stack([np.frombuffer(r["embedding"], dtype=np.float32) for r in rows])
+    return got, M
 
 
 # --- the hard filter (spec Layer 3 step 2) ------------------------------------

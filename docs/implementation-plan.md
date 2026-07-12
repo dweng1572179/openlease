@@ -6498,6 +6498,44 @@ git add -A
 git commit -m "feat(openlease): optional Voyage cosine fused into the same RRF call — keyless path unchanged"
 ```
 
+> **Correction (Task 12):** implementing this section verbatim reproduces the exact bug
+> Task 3's ai.py correction already named — every task so far has found one, and this one
+> did too.
+>
+> 1. **`voyage.py`'s `cached()` call never passed `cost_cents`.** As written above,
+>    `cached("voyage", input_type, {...}, fetch)` defaults `cost_cents` to 0 — a FREE
+>    call — so Voyage (a paid surface, spec §6/§8, even though its free tier covers this
+>    corpus 400x) never went through the monthly-budget guardrail at all:
+>    `cache.BudgetExceeded` could never be raised, mirroring precisely the pre-fix
+>    Anthropic bug two tasks up. Fixed: `voyage.py` now defines `_EMBED_COST_CENTS = 1`
+>    (derivation in the code comment — the lite tier's rate over a ~64-listing batch or a
+>    short query phrase, rounded up for headroom) and passes
+>    `cached(..., cost_cents=_EMBED_COST_CENTS)`.
+> 2. **`embed_listings`/`cosine_ids` never caught `cache.BudgetExceeded`.** With `cost_cents`
+>    now wired, a real cap-exhaustion would propagate an uncaught exception straight out of
+>    `embed_listings` (crashing the crawler's backfill loop) or `cosine_ids` (crashing a live
+>    search request) — the opposite of "loudly logged, never a crash" this file states as a
+>    Global Constraint. Fixed: both functions wrap their `emb.embed(...)` call in
+>    `try/except cache.BudgetExceeded`, log at WARNING naming the budget as the reason
+>    (matching `ai.py`'s established pattern exactly), and degrade — `embed_listings`
+>    returns however many listings it embedded before the cap hit (not a bare 0, so partial
+>    progress survives; whatever's already saved is kept and the rest is picked up next
+>    run), `cosine_ids` returns `[]` so `rank_listings`' RRF fuses over BM25 alone, same as
+>    the no-key path. Covered by `test_embed_listings_falls_back_loudly_on_budget_exceeded`
+>    and `test_cosine_falls_back_loudly_on_budget_exceeded` in `tests/test_rank.py`, both of
+>    which trigger the REAL `cache.BudgetExceeded` (via `monthly_budget_cents=0`) rather
+>    than a hand-rolled stand-in, so the assertion on the logged text can only pass through
+>    the genuine code path.
+> 3. **The crawler/seeder wiring in this step was NOT done in this pass.** `app/crawl.py`
+>    and `app/seed.py` were out of this task's file scope (kept clear of another task's
+>    concurrent edits to those files), so `crawl.run` does not yet call
+>    `rank.embed_listings(saved_ids)` and neither does `seed.seed()`. `rank.embed_listings`
+>    itself is fully implemented and tested; only its call site at the end of a crawl/seed
+>    run is outstanding. Whoever next touches `crawl.py`/`seed.py` should add the ~3-line
+>    call this step already describes (`saved_ids: list[int] = []` at the top of `run()`,
+>    `saved_ids.append(lid)` where a listing is saved, `rank.embed_listings(saved_ids)`
+>    after the loop) — it is a no-op without a key, so it is safe to add at any time.
+
 ---
 
 ### Task 13: The workspace — saves, portfolios, export, AI highlights, per-listing chat

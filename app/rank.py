@@ -10,10 +10,14 @@ Three things here are load-bearing, all learned from the spec's research:
    [-1,1] — the scales are incomparable. RRF over ONE list is order-preserving, so the
    keyless path needs zero branching: it's the same call with one list in.
 """
+import logging
 import re
 
+from . import cache
 from .db import get_conn
 from .models import ListingQuery
+
+log = logging.getLogger("openlease")
 
 RRF_K = 60
 _WORD = re.compile(r"[a-z0-9]+", re.I)
@@ -57,6 +61,85 @@ def rrf(lists: list[list[int]], k: int = RRF_K) -> list[tuple[int, float]]:
     return sorted(scores.items(), key=lambda kv: (-kv[1], kv[0]))
 
 
+def _text_of(row: dict) -> str:
+    return " ".join(str(row.get(k) or "") for k in
+                    ("address", "neighborhood", "property_type", "our_description"))
+
+
+def embed_listings(listing_ids: list[int]) -> int:
+    """Backfill `listing_vec` for ids that don't have a vector yet; returns how many were
+    embedded. No key -> registry.embedder() is None -> a no-op returning 0, and search
+    stays BM25-only (the keyless invariant).
+
+    Voyage IS a paid surface (its free tier covers this corpus 400x, but the budget
+    guardrail still applies). A BudgetExceeded partway through stops the backfill —
+    LOUDLY logged, never a crash — and returns however many embedded before the cap hit;
+    whatever's already saved is kept, and the rest picks up on the next call."""
+    from . import registry
+    emb = registry.embedder()
+    if not emb or not listing_ids:
+        return 0
+    from .db import load_vectors, save_vector
+    have, _ = load_vectors(listing_ids)
+    todo = [i for i in listing_ids if i not in set(have)]
+    if not todo:
+        return 0
+    holes = ",".join("?" * len(todo))
+    with get_conn() as conn:
+        rows = {r["id"]: dict(r) for r in conn.execute(
+            f"SELECT * FROM listing WHERE id IN ({holes})", todo).fetchall()}
+    ids = [i for i in todo if i in rows]
+    done = 0
+    for chunk in (ids[i:i + 64] for i in range(0, len(ids), 64)):
+        try:
+            vecs = emb.embed([_text_of(rows[i]) for i in chunk], input_type="document")
+        except cache.BudgetExceeded as e:
+            log.warning(
+                "Embedding backfill stopped after %d/%d listings — monthly paid-spend "
+                "cap reached (%s); the rest stay BM25-only until the cap resets.",
+                done, len(ids), e,
+            )
+            return done
+        for i, v in zip(chunk, vecs):
+            save_vector(i, v)
+        done += len(chunk)
+    return done
+
+
+def cosine_ids(candidate_ids: list[int], query_text: str) -> list[int]:
+    """Brute-force `M @ q` in numpy: 0.84ms over 5000x1024. No vector index, no extension,
+    no failure mode on a stock python.
+
+    No key, no candidates, no embedded vectors, an empty query, or a BudgetExceeded
+    mid-search all degrade the SAME way — an empty list — so RRF fuses over BM25 alone,
+    exactly the keyless path. A BudgetExceeded is the one case worth a LOUD log; the rest
+    are unremarkable "there's nothing to rank semantically" cases."""
+    from . import registry
+    emb = registry.embedder()
+    if not emb or not candidate_ids or not query_text.strip():
+        return []
+    import numpy as np
+
+    from .db import load_vectors
+    ids, M = load_vectors(candidate_ids)
+    if not ids:
+        return []
+    try:
+        q = np.asarray(emb.embed([query_text], input_type="query")[0], dtype=np.float32)
+    except cache.BudgetExceeded as e:
+        log.warning(
+            "Semantic ranking skipped for this search — monthly paid-spend cap reached "
+            "(%s); falling back to BM25 only.", e,
+        )
+        return []
+    n = float(np.linalg.norm(q))
+    if n:
+        q = q / n
+    sims = M @ q                                   # both sides L2-normed -> cosine
+    order = np.argsort(-sims)
+    return [ids[i] for i in order]
+
+
 def _rationale(row: dict, q: ListingQuery) -> str:
     """One line: why this matched. Deterministic and keyless — the LLM writes the
     conversational reply, but every result explains itself even with no key."""
@@ -83,8 +166,11 @@ def rank_listings(candidate_ids: list[int], q: ListingQuery) -> list[dict]:
     if it matched no keyword). Each carries SpaceFinder's three per-listing fields."""
     if not candidate_ids:
         return []
-    lists = [ids for ids in (bm25_ids(candidate_ids, q.keywords),) if ids]
-    # Task 12 appends the cosine list here; RRF's signature does not change.
+    # Keyless: cosine_ids returns [] and RRF fuses ONE list, which is order-preserving —
+    # so there is no `if voyage_key` branch anywhere in the ranker.
+    query_text = " ".join([*q.keywords, q.neighborhood, *q.property_types]).strip()
+    lists = [ids for ids in (bm25_ids(candidate_ids, q.keywords),
+                             cosine_ids(candidate_ids, query_text)) if ids]
     fused = rrf(lists) if lists else []
 
     ordered = [i for i, _ in fused]
