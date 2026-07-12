@@ -83,6 +83,22 @@ CREATE TRIGGER IF NOT EXISTS listing_fts_au AFTER UPDATE ON listing BEGIN
     INSERT INTO listing_fts(rowid, address, our_description, neighborhood)
     VALUES (new.id, new.address, new.our_description, new.neighborhood);
 END;
+
+CREATE TABLE IF NOT EXISTS search_session (
+    id          TEXT PRIMARY KEY,      -- the client's sessionId
+    metro       TEXT NOT NULL,
+    title       TEXT,                  -- the first message, truncated — the "Recent" label
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS search_turn (
+    id             INTEGER PRIMARY KEY,
+    session_id     TEXT NOT NULL REFERENCES search_session(id) ON DELETE CASCADE,
+    message        TEXT NOT NULL,
+    musthaves_json TEXT NOT NULL,      -- what priorState replays on the next turn
+    reply          TEXT,
+    created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_turn_session ON search_turn(session_id);
 """
 
 
@@ -159,3 +175,92 @@ def get_listing(listing_id: int) -> dict | None:
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM listing WHERE id = ?", (listing_id,)).fetchone()
     return dict(row) if row else None
+
+
+# --- the hard filter (spec Layer 3 step 2) ------------------------------------
+# Every one of these is a CONSTRAINT, not a preference: it becomes SQL WHERE and is
+# never soft-ranked away. Ranking happens over the survivors, in rank.py.
+
+def filter_listings(q, metro: str, limit: int = 200) -> list[dict]:
+    where = ["metro = ?", "status = 'available'"]
+    args: list = [metro]
+
+    if q.property_types:
+        where.append(f"property_type IN ({','.join('?' * len(q.property_types))})")
+        args += q.property_types
+    if q.transaction_type:
+        where.append("transaction_type = ?")
+        args.append(q.transaction_type)
+    if q.min_size_sf:
+        # a divisible space qualifies if its SMALLEST split reaches the floor
+        where.append("COALESCE(divisible_max_sf, size_sf) >= ?")
+        args.append(q.min_size_sf)
+    if q.max_size_sf:
+        where.append("COALESCE(divisible_min_sf, size_sf) <= ?")
+        args.append(q.max_size_sf)
+    if q.max_rent_per_sf_yr:
+        # only compare like units; a listing with no ask is NOT excluded by a rent cap
+        where.append(
+            "(asking_rent IS NULL OR ("
+            "  CASE rent_unit"
+            "    WHEN 'sf_yr' THEN asking_rent"
+            "    WHEN 'sf_mo' THEN asking_rent * 12"
+            "    WHEN 'mo'    THEN CASE WHEN size_sf > 0 THEN asking_rent * 12.0 / size_sf END"
+            "  END) <= ?)"
+        )
+        args.append(q.max_rent_per_sf_yr)
+    if q.min_lat and q.max_lat and q.min_lng and q.max_lng:
+        where.append("lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?")
+        args += [q.min_lat, q.max_lat, q.min_lng, q.max_lng]
+    if q.boroughs:
+        where.append(f"borough IN ({','.join('?' * len(q.boroughs))})")
+        args += q.boroughs
+    if q.neighborhood:
+        where.append("neighborhood LIKE ?")
+        args.append(f"%{q.neighborhood}%")
+    for col, vals in (("address", q.exclude_addr_states), ("neighborhood", q.exclude_cities)):
+        for v in vals:                       # NOT-IN guards; excludes are hard too
+            where.append(f"COALESCE({col}, '') NOT LIKE ?")
+            args.append(f"%{v}%")
+    for z3 in q.exclude_zip3:
+        where.append("COALESCE(address, '') NOT LIKE ?")
+        args.append(f"% {z3}%")
+
+    sql = f"SELECT * FROM listing WHERE {' AND '.join(where)} LIMIT ?"
+    with get_conn() as conn:
+        return [dict(r) for r in conn.execute(sql, [*args, limit]).fetchall()]
+
+
+# --- search sessions ("Recent" history + priorState) --------------------------
+
+def save_turn(session_id: str, metro: str, message: str, must_haves: dict, reply: str) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO search_session (id, metro, title) VALUES (?, ?, ?) "
+            "ON CONFLICT(id) DO NOTHING",
+            (session_id, metro, message[:80]),
+        )
+        conn.execute(
+            "INSERT INTO search_turn (session_id, message, musthaves_json, reply) "
+            "VALUES (?, ?, ?, ?)",
+            (session_id, message, json.dumps(must_haves), reply),
+        )
+
+
+def list_sessions(limit: int = 20) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT s.id, s.metro, s.title, s.created_at, COUNT(t.id) AS turns "
+            "FROM search_session s LEFT JOIN search_turn t ON t.session_id = s.id "
+            "GROUP BY s.id ORDER BY s.created_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_session_turns(session_id: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT message, musthaves_json, reply, created_at FROM search_turn "
+            "WHERE session_id = ? ORDER BY id", (session_id,)
+        ).fetchall()
+    return [dict(r) for r in rows]

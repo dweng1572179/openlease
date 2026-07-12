@@ -2484,6 +2484,70 @@ class SearchRequest(BaseModel):
     metro: str = "nyc"
 
 
+> **Correction (found during implementation, see task-5-report.md):** the version below
+> re-derived "what to relax next" from the CURRENT state of `q`'s fields. That's fine for
+> the rent-cap and neighborhood stages (each fully clears its own constraint in one shot),
+> but the size stage only WIDENS — `min_size_sf` shrinks toward 0, `max_size_sf` only ever
+> GROWS — so it never zeroes itself out. A single `while not rows:` loop that re-inspects
+> field state therefore re-enters the "size" branch forever whenever widening size alone
+> can never satisfy some OTHER hard constraint (e.g. `propertyTypes: ["land"]` with zero
+> land inventory in any metro at any size) — an unbounded exponential widen that
+> eventually raises `OverflowError: Python int too large to convert to SQLite INTEGER`
+> from `db.filter_listings` (confirmed live: `POST /api/search {"message": "land in miami
+> around 1500 sf", "metro": "mia"}` 500s). The fix: name the stage explicitly and have the
+> caller iterate a fixed 3-stage ladder EXACTLY once each, so "at most once per stage" is
+> a caller invariant instead of something inferred (and gotten wrong) from field state.
+> The corrected shape:
+>
+> ```python
+> _LADDER = (("rent", "the rent cap"), ("size", "the size range"),
+>            ("neighborhood", "the neighborhood"))
+>
+>
+> def _relax(q: ListingQuery, stage: str) -> ListingQuery | None:
+>     """Apply ONE named stage. Returns None when this stage's constraint isn't set
+>     (caller moves to the next stage) — see the correction note above for why the
+>     stage must be named by the caller rather than inferred from field state."""
+>     r = q.model_copy(deep=True)
+>     if stage == "rent":
+>         if not r.max_rent_per_sf_yr:
+>             return None
+>         r.max_rent_per_sf_yr = 0
+>         return r
+>     if stage == "size":
+>         if not (r.min_size_sf or r.max_size_sf):
+>             return None
+>         r.min_size_sf = int(r.min_size_sf * 0.6) if r.min_size_sf else 0
+>         r.max_size_sf = int(r.max_size_sf * 1.6) if r.max_size_sf else 0
+>         return r
+>     if stage == "neighborhood":
+>         if not (r.neighborhood or r.boroughs):
+>             return None
+>         r.neighborhood, r.boroughs = "", []
+>         return r
+>     return None
+> ```
+>
+> and in `api_search`, replace the `while not rows:` loop with:
+>
+> ```python
+>     if not rows:
+>         for stage, label in _LADDER:
+>             step = _relax(q_used, stage)
+>             if step is None:
+>                 continue
+>             q_used = step
+>             candidate_rows = db.filter_listings(q_used, metro)
+>             if candidate_rows:
+>                 rows = candidate_rows
+>                 relaxed_what = label
+>                 is_near_miss = True
+>                 break
+> ```
+>
+> The pre-correction version below is kept for history; do not copy it as-is.
+
+```python
 def _relax(q: ListingQuery) -> tuple[ListingQuery, str] | None:
     """One step down the softness ladder. Returns None when nothing is left to relax."""
     r = q.model_copy(deep=True)
@@ -2664,6 +2728,13 @@ def test_session_history_and_prior_state(client):
 
 Expected first: FAIL — `No module named 'app.routes_search'`. Then `5 passed`.
 
+> **Correction:** a 6th test, `test_near_miss_ladder_terminates_when_nothing_helps`, was
+> added during implementation as the regression test for the `_relax` bug above (a
+> `propertyTypes: ["land"]` search — zero land inventory in any seeded metro at any size —
+> used to 500 with `OverflowError` as the softness ladder re-widened `maxSizeSf`
+> unboundedly; it must instead exhaust the ladder and answer honestly: `results: []`,
+> `isNearMiss: false`). Expected after the fix: `6 passed`.
+
 - [ ] **Step 6: Exercise it by hand**
 
 ```bash
@@ -2676,6 +2747,16 @@ kill %1
 ```
 
 Expected: a JSON body whose `results[0].address` is `2618 NW 2nd Ave, Miami, FL`.
+
+> **Correction:** this address does come back, but NOT as a direct hit — read literally,
+> "$8k/mo" for "~1,500 SF" parses to a `maxRentPerSfYr` cap of `8000*12/1500 = 64`. The
+> seeded Wynwood listing's actual ask is `$95/SF/yr` (set in `app/seed.py` since Task 2,
+> unchanged), which is ABOVE that cap. So the first (unrelaxed) filter pass correctly
+> returns zero rows — the hard filter is doing its job — and the near-miss ladder relaxes
+> the rent cap to find this listing. The real response has `isNearMiss: true` and
+> `query.relaxed: "the rent cap"`. This is still a fair hand-check (the address matches,
+> and it now *also* demonstrates the near-miss path on real seeded data), but the original
+> wording implied a direct match; it does not happen with this specific rent figure.
 
 - [ ] **Step 7: Commit**
 

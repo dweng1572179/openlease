@@ -97,3 +97,4 @@ def home(request: Request, _=Depends(require_auth)):
 
 # Feature routes attach to `app` here as each task lands:
 from . import routes_settings   # noqa: E402,F401  (T1)
+from . import routes_search     # noqa: E402,F401  (T5)
