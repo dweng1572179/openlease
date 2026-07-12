@@ -64,7 +64,7 @@
     <div class="rounded-lg border bg-white p-4">
       <h2 class="text-sm font-semibold mb-2">
         Walk Score {{ l.walkScore }}<span class="text-slate-400 font-normal"> / 100</span>
-        {% if l.transitScore %}
+        {% if l.transitScore is not none %}
         <span class="ml-3">Transit Score {{ l.transitScore }}<span class="text-slate-400 font-normal"> / 100</span></span>
         {% endif %}
       </h2>

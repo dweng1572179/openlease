@@ -95,6 +95,33 @@ def test_transit_score_counts_routes_not_stops():
     assert 0 <= one_bus <= 100 and 0 <= rail_one <= 100
 
 
+def test_one_route_scores_the_same_however_many_stops_it_has():
+    """The per-route invariant, stated so it can actually FAIL.
+
+    `rail_one > one_bus` above cannot catch a per-stop regression: log-normalization
+    pins both near the 100 ceiling, so summing the ten M4 stops individually still
+    leaves the 8-route rail hub ahead and the assertion still passes.
+
+    The invariant with teeth: a route is worth the same whether the agency happened to
+    map it with one stop or ten. Ten stops on the M4, all at the identical distance,
+    must score EXACTLY what one stop on the M4 scores. Per-stop summing makes the ten
+    ~10x the one, and this test fails — which is the whole point of it."""
+    at = dict(lat=40.7484, lng=-73.9857)
+    one = [{"category": "bus_stop", "lat": 40.7520, "lng": -73.9857, "route_refs": ["M4"]}]
+    # same route, same distance, ten times over (a hub with many mapped platforms)
+    ten = [dict(one[0]) for _ in range(10)]
+
+    s_one, _ = score.transit_score(at["lat"], at["lng"], one, [])
+    s_ten, _ = score.transit_score(at["lat"], at["lng"], ten, [])
+    assert s_one == s_ten, (s_one, s_ten)
+    assert s_one > 0, "the single M4 stop must score something, or this proves nothing"
+
+    # ...and a genuinely SECOND route at the same spot must score strictly more.
+    two_routes = [dict(one[0], route_refs=["M4"]), dict(one[0], route_refs=["M104"])]
+    s_two, _ = score.transit_score(at["lat"], at["lng"], two_routes, [])
+    assert s_two > s_one, (s_two, s_one)
+
+
 def test_bundled_rail_is_present_for_every_metro():
     for metro, floor in [("nyc", 400), ("mia", 30), ("la", 90), ("chi", 100)]:
         st = rail.stations(metro)

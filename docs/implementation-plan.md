@@ -4276,6 +4276,24 @@ def test_transit_score_counts_routes_not_stops():
         {"name": "34 St-Herald Sq", "lat": 40.7497, "lng": -73.9877, "mode": "rail",
          "routes": ["B", "D", "F", "M", "N", "Q", "R", "W"]}])
     assert rail_one > one_bus, (rail_one, one_bus)
+
+
+# NOTE (review pass): `rail_one > one_bus` CANNOT catch a per-stop regression -- the
+# log-normalization pins both near the 100 ceiling, so summing the ten M4 stops
+# individually still leaves the 8-route rail hub ahead and the assertion still passes.
+# The invariant with teeth is that a route is worth the same however many stops the
+# agency happened to map it with:
+def test_one_route_scores_the_same_however_many_stops_it_has():
+    at = dict(lat=40.7484, lng=-73.9857)
+    one = [{"category": "bus_stop", "lat": 40.7520, "lng": -73.9857, "route_refs": ["M4"]}]
+    ten = [dict(one[0]) for _ in range(10)]          # same route, same distance, ten times
+    s_one, _ = score.transit_score(at["lat"], at["lng"], one, [])
+    s_ten, _ = score.transit_score(at["lat"], at["lng"], ten, [])
+    assert s_one == s_ten, (s_one, s_ten)            # per-stop summing makes ten ~10x the one
+    assert s_one > 0, "the single M4 stop must score something, or this proves nothing"
+    two_routes = [dict(one[0], route_refs=["M4"]), dict(one[0], route_refs=["M104"])]
+    s_two, _ = score.transit_score(at["lat"], at["lng"], two_routes, [])
+    assert s_two > s_one, (s_two, s_one)             # a genuinely second route DOES count
     assert 0 <= one_bus <= 100 and 0 <= rail_one <= 100
 
 
@@ -4305,7 +4323,7 @@ In `templates/listing.html`, replace `{% block listing_extra %}{% endblock %}` w
 <div class="rounded-lg border bg-white p-4">
   <h2 class="text-sm font-semibold mb-2">
     Walk Score {{ l.walkScore }}<span class="text-slate-400 font-normal"> / 100</span>
-    {% if l.transitScore %}
+    {% if l.transitScore is not none %}   <!-- 0 is a REAL score (transit desert), not 'uncomputed' -->
     <span class="ml-3">Transit Score {{ l.transitScore }}<span class="text-slate-400 font-normal"> / 100</span></span>
     {% endif %}
   </h2>
