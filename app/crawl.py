@@ -496,14 +496,21 @@ def crawl_source(src: dict, metro: str, limit: int = 100) -> list[dict]:
     return out
 
 
-def run(metro: str | None = None, limit: int = 100) -> dict:
-    """Crawl every allowlisted source (optionally one metro). Geocodes and enriches each
-    new listing with Walk/Transit score at ingest — the ONLY time Overpass is ever
-    called, and paced (`settings.overpass_pace_seconds` between calls) so a real crawl
-    never hammers the one shared free mirror the way Task 8 did doing 12 listings
-    back-to-back."""
+def run(metro: str | None = None, limit: int = 100, enrich: bool = False) -> dict:
+    """Crawl every allowlisted source (optionally one metro), geocoding each listing.
+
+    Enrichment (Walk/Transit score, i.e. Overpass) is DECOUPLED and off by default — call
+    `enrich_pending()` afterwards. Both are ingest-time; they just must not share a loop.
+
+    Scoring inline made supply hostage to POI lookups: the free Overpass mirrors soft
+    rate-limit hard under a bulk run, and with retry-and-backoff every listing was costing
+    8-56s of sleep. A measured run spent 30 minutes and 24 backoffs without ever getting
+    past New York — the crawl was throttled to Overpass's pace even though it had nothing
+    to ask Overpass for. Fetch supply fast; score it separately, at whatever pace the
+    mirror will bear.
+    """
     metros = [metro] if metro else list(SOURCES)
-    stats = {"fetched": 0, "saved": 0, "skipped": 0, "errors": []}
+    stats: dict = {"fetched": 0, "saved": 0, "no_pin": 0, "per_source": {}, "errors": []}
     try:
         for m in metros:
             for src in SOURCES.get(m, []):
@@ -511,21 +518,44 @@ def run(metro: str | None = None, limit: int = 100) -> dict:
                     recs = crawl_source(src, m, limit)
                 except Exception as e:  # noqa: BLE001 — one bad source must not kill the run
                     log.warning("source %s failed: %s: %s", src["key"], type(e).__name__, e)
-                    stats["errors"].append(f"{src['key']}: {type(e).__name__}")
+                    stats["errors"].append(f"{src['key']}: {type(e).__name__}: {e}"[:120])
                     continue
                 stats["fetched"] += len(recs)
                 for rec in recs:
                     if not rec.get("lat"):
-                        stats["skipped"] += 1   # no point = no scoring; still stored
-                    lid = save_listing(rec)
+                        stats["no_pin"] += 1    # no point = no map pin, no score; still stored
+                    save_listing(rec)
                     stats["saved"] += 1
-                    if rec.get("lat"):
-                        try:
-                            score.enrich(lid)
-                        except Exception as e:  # noqa: BLE001 — an Overpass failure is a
-                            # loud skip (score stays null), never a crash and never a 0
-                            log.warning("scoring failed for %s: %s", lid, e)
-                        time.sleep(settings.overpass_pace_seconds)
+                stats["per_source"][src["key"]] = {
+                    "rung": src.get("rung"), "listings": len(recs),
+                }
+                log.info("%s (%s): %d listings", src["key"], src.get("rung"), len(recs))
     finally:
         close()                                 # always release the Chromium
+    if enrich:
+        stats["enriched"] = enrich_pending()
     return stats
+
+
+def enrich_pending(limit: int = 500) -> int:
+    """Score every stored listing that has coordinates but no Walk Score yet.
+
+    Separate from the crawl on purpose (see `run`). Paced by
+    `settings.overpass_pace_seconds`, and an Overpass failure is a LOUD skip — the score
+    stays NULL, which the UI renders as "not computed". It is never a 0: a 0 is a real
+    Walk Score (car-dependent), and a corpus of fake zeros is worse than an empty column.
+    """
+    with get_conn() as conn:
+        ids = [r["id"] for r in conn.execute(
+            "SELECT id FROM listing WHERE lat IS NOT NULL AND walk_score IS NULL LIMIT ?",
+            (limit,)).fetchall()]
+    done = 0
+    for lid in ids:
+        try:
+            score.enrich(lid)
+            done += 1
+        except Exception as e:  # noqa: BLE001
+            log.warning("scoring failed for listing %s: %s: %s", lid, type(e).__name__, e)
+        time.sleep(settings.overpass_pace_seconds)
+    log.info("enriched %d/%d pending listings", done, len(ids))
+    return done

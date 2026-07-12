@@ -138,17 +138,20 @@ def test_api_crawl_wires_to_the_ladder_when_authed(monkeypatch):
     never do)."""
     calls = {}
 
-    def _fake_run(metro=None, limit=100):
-        calls["metro"], calls["limit"] = metro, limit
-        return {"fetched": 0, "saved": 0, "skipped": 0, "errors": []}
+    def _fake_run(metro=None, limit=100, enrich=False):
+        calls["metro"], calls["limit"], calls["enrich"] = metro, limit, enrich
+        return {"fetched": 0, "saved": 0, "no_pin": 0, "per_source": {}, "errors": []}
 
     monkeypatch.setattr(crawl, "run", _fake_run)
     with TestClient(app, follow_redirects=False) as c:
         c.post("/login", data={"password": "test-pw"})
         r = c.post("/api/crawl", params={"metro": "nyc", "limit": 5})
         assert r.status_code == 200
-        assert r.json() == {"fetched": 0, "saved": 0, "skipped": 0, "errors": []}
-        assert calls == {"metro": "nyc", "limit": 5}
+        #  is now  (a listing with no coordinates is stored, just unpinned)
+        # and per_source reports which rung each source actually landed on.
+        assert r.json() == {"fetched": 0, "saved": 0, "no_pin": 0, "per_source": {}, "errors": []}
+        assert calls["enrich"] is False, "scoring is a separate, paced pass — not the crawl loop"
+        assert calls == {"metro": "nyc", "limit": 5, "enrich": False}
 
 
 def test_api_sources_returns_the_allowlist_when_authed():
@@ -525,17 +528,22 @@ def test_crawl_source_geocodes_each_extracted_record(monkeypatch, isolated_db):
     assert recs[0]["lat"] == 41.9 and recs[0]["lng"] == -87.67
 
 
-def test_run_paces_overpass_between_listings(monkeypatch, isolated_db):
-    """Task 8 hit 429/504 doing 12 listings back-to-back. run() must sleep between
-    successive score.enrich() calls, never hammer the one shared free mirror."""
+def test_crawl_does_not_score_inline_and_enrich_pending_paces_overpass(monkeypatch, isolated_db):
+    """Scoring inline made SUPPLY hostage to POI lookups: the free Overpass mirrors soft
+    rate-limit hard under a bulk run, and with retry-and-backoff each listing cost 8-56s of
+    sleep. A measured run burned 30 minutes and 24 backoffs without ever getting past New
+    York — throttled to Overpass's pace while it had nothing to ask Overpass for.
+
+    So run() fetches supply and does NOT score. enrich_pending() scores, separately, paced.
+    Both are still ingest-time; they just must not share a loop."""
     monkeypatch.setattr(crawl, "SOURCES", {"nyc": [
         {"key": "x", "name": "X", "url": "https://x.example.com", "rung": "jsonld", "tier": "default"},
     ]})
     recs = [
         {"address": "1 Main St", "metro": "nyc", "source": "x",
-         "source_url": "https://x.example.com/1", "lat": 1.0, "lng": 2.0},
+         "source_url": "https://x.example.com/1", "lat": 40.75, "lng": -73.99},
         {"address": "2 Main St", "metro": "nyc", "source": "x",
-         "source_url": "https://x.example.com/2", "lat": 3.0, "lng": 4.0},
+         "source_url": "https://x.example.com/2", "lat": 40.76, "lng": -73.98},
     ]
     monkeypatch.setattr(crawl, "crawl_source", lambda src, m, limit: recs)
     monkeypatch.setattr(crawl, "close", lambda: None)
@@ -545,42 +553,42 @@ def test_run_paces_overpass_between_listings(monkeypatch, isolated_db):
     monkeypatch.setattr(crawl.time, "sleep", lambda s: sleeps.append(s))
 
     stats = crawl.run("nyc", limit=5)
+    assert stats["saved"] == 2 and stats["no_pin"] == 0
+    assert enrich_calls == [], "the crawl must not score inline — that is what throttled it"
 
-    assert len(enrich_calls) == 2
+    # ...and the separate pass DOES score, and DOES pace itself between calls
+    n = crawl.enrich_pending()
+    assert n == 2 and len(enrich_calls) == 2
     assert sleeps.count(settings.overpass_pace_seconds) == 2
-    assert stats["saved"] == 2 and stats["skipped"] == 0
 
 
-def test_run_overpass_failure_is_a_loud_skip_never_a_crash_never_a_0(monkeypatch, isolated_db, caplog):
+def test_overpass_failure_is_a_loud_skip_never_a_crash_never_a_0(monkeypatch, isolated_db, caplog):
+    """An Overpass failure leaves walk_score NULL and says so LOUDLY. Never a crash, and
+    never a 0 — a 0 is a REAL Walk Score (car-dependent), and a corpus of fake zeros is
+    worse than an empty column."""
     monkeypatch.setattr(crawl, "SOURCES", {"nyc": [
         {"key": "x", "name": "X", "url": "https://x.example.com", "rung": "jsonld", "tier": "default"},
     ]})
-    recs = [{"address": "1 Main St", "metro": "nyc", "source": "x",
-             "source_url": "https://x.example.com/1", "lat": 1.0, "lng": 2.0}]
-    monkeypatch.setattr(crawl, "crawl_source", lambda src, m, limit: recs)
+    rec = {"address": "1 Main St", "metro": "nyc", "source": "x",
+           "source_url": "https://x.example.com/1", "lat": 40.75, "lng": -73.99}
+    monkeypatch.setattr(crawl, "crawl_source", lambda src, m, limit: [rec])
     monkeypatch.setattr(crawl, "close", lambda: None)
     monkeypatch.setattr(crawl.time, "sleep", lambda s: None)
 
     def _boom(lid):
-        from app.providers.overpass import OverpassEmpty
-        raise OverpassEmpty("zero elements")
+        raise RuntimeError("Overpass is down")
 
     monkeypatch.setattr(crawl.score, "enrich", _boom)
 
+    crawl.run("nyc", limit=5)
     with caplog.at_level(logging.WARNING, logger="openlease"):
-        stats = crawl.run("nyc", limit=5)
+        assert crawl.enrich_pending() == 0        # nothing scored, and it did not raise
+    assert "scoring failed" in caplog.text.lower()
 
-    assert stats["saved"] == 1, "the listing must still save even though scoring failed"
-    assert any("scoring failed" in r.message for r in caplog.records)
     with db.get_conn() as conn:
         row = conn.execute("SELECT walk_score FROM listing WHERE source_url = ?",
-                            ("https://x.example.com/1",)).fetchone()
-    assert row["walk_score"] is None, "an Overpass failure must leave the score NULL, never 0"
-
-
-# --- robots.txt is FETCHED, parsed, obeyed (the fetch itself was never tested) -----------
-# Every test above preloads crawl._ROBOTS, so none of them ever exercised the fetch — which
-# is exactly how the bug below survived to a live run.
+                           (rec["source_url"],)).fetchone()
+    assert row["walk_score"] is None, "a failed lookup is NULL, never a fabricated 0"
 
 def _robots_response(monkeypatch, status: int, text: str):
     monkeypatch.setattr(crawl, "_get_robots_txt", lambda url: (status, text))
