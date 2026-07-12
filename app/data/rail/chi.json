@@ -1,0 +1,1353 @@
+[
+{
+"name": "Cicero-Congress",
+"lat": 41.871608050522994,
+"lng": -87.74517217791391,
+"mode": "rail",
+"routes": [
+"Blue"
+]
+},
+{
+"name": "Harlem-Lake",
+"lat": 41.88684830347631,
+"lng": -87.80317598719213,
+"mode": "rail",
+"routes": [
+"Green"
+]
+},
+{
+"name": "Ridgeland",
+"lat": 41.88715939826551,
+"lng": -87.78366103293801,
+"mode": "rail",
+"routes": [
+"Green"
+]
+},
+{
+"name": "Cumberland",
+"lat": 41.984294057828016,
+"lng": -87.83802598504772,
+"mode": "rail",
+"routes": [
+"Blue"
+]
+},
+{
+"name": "Washington/Wabash",
+"lat": 41.88322001293653,
+"lng": -87.62618878473234,
+"mode": "rail",
+"routes": [
+"Brown",
+"Green",
+"Orange",
+"Pink",
+"Purple"
+]
+},
+{
+"name": "LaSalle",
+"lat": 41.875567625950715,
+"lng": -87.63172207547264,
+"mode": "rail",
+"routes": [
+"Blue"
+]
+},
+{
+"name": "Grand/Milwaukee",
+"lat": 41.89118929406765,
+"lng": -87.64757831015247,
+"mode": "rail",
+"routes": [
+"Blue"
+]
+},
+{
+"name": "Central-Evanston",
+"lat": 42.06398654414921,
+"lng": -87.68561725654831,
+"mode": "rail",
+"routes": [
+"Purple"
+]
+},
+{
+"name": "Montrose-O'Hare",
+"lat": 41.961486633040835,
+"lng": -87.74361697430824,
+"mode": "rail",
+"routes": [
+"Blue"
+]
+},
+{
+"name": "Indiana",
+"lat": 41.8218151964997,
+"lng": -87.62146281101369,
+"mode": "rail",
+"routes": [
+"Green"
+]
+},
+{
+"name": "Garfield-Dan Ryan",
+"lat": 41.79541826211501,
+"lng": -87.63116917003116,
+"mode": "rail",
+"routes": [
+"Red"
+]
+},
+{
+"name": "Kedzie-Lake",
+"lat": 41.88432109621861,
+"lng": -87.70615542049478,
+"mode": "rail",
+"routes": [
+"Green"
+]
+},
+{
+"name": "79th",
+"lat": 41.750412342729696,
+"lng": -87.62517835384935,
+"mode": "rail",
+"routes": [
+"Red"
+]
+},
+{
+"name": "North/Clybourn",
+"lat": 41.91065458056037,
+"lng": -87.64917726687139,
+"mode": "rail",
+"routes": [
+"Red"
+]
+},
+{
+"name": "47th-Dan Ryan",
+"lat": 41.81033813281231,
+"lng": -87.63102579710096,
+"mode": "rail",
+"routes": [
+"Red"
+]
+},
+{
+"name": "Davis",
+"lat": 42.04771009459835,
+"lng": -87.68354292586837,
+"mode": "rail",
+"routes": [
+"Purple"
+]
+},
+{
+"name": "Addison-Ravenswood",
+"lat": 41.94702865537701,
+"lng": -87.6747361074464,
+"mode": "rail",
+"routes": [
+"Brown"
+]
+},
+{
+"name": "California-Douglas",
+"lat": 41.854279630327355,
+"lng": -87.69482291545437,
+"mode": "rail",
+"routes": [
+"Pink"
+]
+},
+{
+"name": "Clark/Lake",
+"lat": 41.88573698625938,
+"lng": -87.63088601833961,
+"mode": "rail",
+"routes": [
+"Blue",
+"Brown",
+"Green",
+"Orange",
+"Pink",
+"Purple"
+]
+},
+{
+"name": "Lake/State",
+"lat": 41.88480886783524,
+"lng": -87.62781338044591,
+"mode": "rail",
+"routes": [
+"Red"
+]
+},
+{
+"name": "Main",
+"lat": 42.03345571051573,
+"lng": -87.67953792271051,
+"mode": "rail",
+"routes": [
+"Purple"
+]
+},
+{
+"name": "Pulaski-Congress",
+"lat": 41.87388872444464,
+"lng": -87.725624930077,
+"mode": "rail",
+"routes": [
+"Blue"
+]
+},
+{
+"name": "Irving Park-O'Hare",
+"lat": 41.952940261723505,
+"lng": -87.72917726558204,
+"mode": "rail",
+"routes": [
+"Blue"
+]
+},
+{
+"name": "18th",
+"lat": 41.85790770843142,
+"lng": -87.6691601248801,
+"mode": "rail",
+"routes": [
+"Pink"
+]
+},
+{
+"name": "King Drive",
+"lat": 41.780129716720246,
+"lng": -87.61554588356856,
+"mode": "rail",
+"routes": [
+"Green"
+]
+},
+{
+"name": "Garfield-South Elevated",
+"lat": 41.795176653771136,
+"lng": -87.61832410779981,
+"mode": "rail",
+"routes": [
+"Green"
+]
+},
+{
+"name": "Foster",
+"lat": 42.05416022489172,
+"lng": -87.68356032638904,
+"mode": "rail",
+"routes": [
+"Purple"
+]
+},
+{
+"name": "Cicero-Douglas",
+"lat": 41.851924714963396,
+"lng": -87.74534200985961,
+"mode": "rail",
+"routes": [
+"Pink"
+]
+},
+{
+"name": "Argyle",
+"lat": 41.973453322879514,
+"lng": -87.65852996352429,
+"mode": "rail",
+"routes": [
+"Red"
+]
+},
+{
+"name": "Merchandise Mart",
+"lat": 41.888967933815984,
+"lng": -87.63397336028807,
+"mode": "rail",
+"routes": [
+"Brown",
+"Purple"
+]
+},
+{
+"name": "Chicago/State",
+"lat": 41.89667121282868,
+"lng": -87.62817635256233,
+"mode": "rail",
+"routes": [
+"Red"
+]
+},
+{
+"name": "Washington/Wells",
+"lat": 41.882695018498964,
+"lng": -87.63385352993139,
+"mode": "rail",
+"routes": [
+"Brown",
+"Orange",
+"Pink",
+"Purple"
+]
+},
+{
+"name": "Wilson",
+"lat": 41.96425415994733,
+"lng": -87.65773404557505,
+"mode": "rail",
+"routes": [
+"Red",
+"Purple"
+]
+},
+{
+"name": "Oak Park-Lake",
+"lat": 41.8869875216134,
+"lng": -87.79378335175879,
+"mode": "rail",
+"routes": [
+"Green"
+]
+},
+{
+"name": "Midway Airport",
+"lat": 41.7866135510346,
+"lng": -87.73795637168769,
+"mode": "rail",
+"routes": [
+"Orange"
+]
+},
+{
+"name": "Chicago/Milwaukee",
+"lat": 41.89607523740354,
+"lng": -87.65521427917491,
+"mode": "rail",
+"routes": [
+"Blue"
+]
+},
+{
+"name": "Quincy/Wells",
+"lat": 41.87872328348997,
+"lng": -87.63373997596631,
+"mode": "rail",
+"routes": [
+"Brown",
+"Orange",
+"Pink",
+"Purple"
+]
+},
+{
+"name": "Armitage",
+"lat": 41.9182165680886,
+"lng": -87.65264430600404,
+"mode": "rail",
+"routes": [
+"Brown",
+"Purple"
+]
+},
+{
+"name": "Morgan",
+"lat": 41.88557678872635,
+"lng": -87.65212799206752,
+"mode": "rail",
+"routes": [
+"Green",
+"Pink"
+]
+},
+{
+"name": "Laramie",
+"lat": 41.88716322654387,
+"lng": -87.75498649428108,
+"mode": "rail",
+"routes": [
+"Green"
+]
+},
+{
+"name": "Cottage Grove",
+"lat": 41.780308767768915,
+"lng": -87.6058574174785,
+"mode": "rail",
+"routes": [
+"Green"
+]
+},
+{
+"name": "Loyola",
+"lat": 42.0010733596017,
+"lng": -87.6610607008597,
+"mode": "rail",
+"routes": [
+"Red"
+]
+},
+{
+"name": "Library",
+"lat": 41.876908340423775,
+"lng": -87.62820914456076,
+"mode": "rail",
+"routes": [
+"Brown",
+"Orange",
+"Pink",
+"Purple"
+]
+},
+{
+"name": "Harrison",
+"lat": 41.874039244054394,
+"lng": -87.62747911770376,
+"mode": "rail",
+"routes": [
+"Red"
+]
+},
+{
+"name": "Rosemont",
+"lat": 41.98350728784708,
+"lng": -87.8593877016713,
+"mode": "rail",
+"routes": [
+"Blue"
+]
+},
+{
+"name": "Roosevelt/Wabash",
+"lat": 41.86740495963631,
+"lng": -87.62658988700281,
+"mode": "rail",
+"routes": [
+"Green",
+"Orange"
+]
+},
+{
+"name": "Rockwell",
+"lat": 41.96620994947778,
+"lng": -87.69411112481461,
+"mode": "rail",
+"routes": [
+"Brown"
+]
+},
+{
+"name": "Racine",
+"lat": 41.87588563477907,
+"lng": -87.65945550927005,
+"mode": "rail",
+"routes": [
+"Blue"
+]
+},
+{
+"name": "Kedzie-Homan",
+"lat": 41.87442550900997,
+"lng": -87.70597829539031,
+"mode": "rail",
+"routes": [
+"Blue"
+]
+},
+{
+"name": "Belmont-O'Hare",
+"lat": 41.93813166977897,
+"lng": -87.71235935057341,
+"mode": "rail",
+"routes": [
+"Blue"
+]
+},
+{
+"name": "Dempster",
+"lat": 42.04165464471751,
+"lng": -87.68160198666094,
+"mode": "rail",
+"routes": [
+"Purple"
+]
+},
+{
+"name": "63rd-Dan Ryan",
+"lat": 41.78053433456899,
+"lng": -87.63100044907034,
+"mode": "rail",
+"routes": [
+"Red"
+]
+},
+{
+"name": "Polk",
+"lat": 41.871563004328266,
+"lng": -87.66954322799872,
+"mode": "rail",
+"routes": [
+"Pink"
+]
+},
+{
+"name": "Addison-North Main",
+"lat": 41.94742799746875,
+"lng": -87.65362593077104,
+"mode": "rail",
+"routes": [
+"Red"
+]
+},
+{
+"name": "Halsted-Midway",
+"lat": 41.84690144087428,
+"lng": -87.64813110426746,
+"mode": "rail",
+"routes": [
+"Orange"
+]
+},
+{
+"name": "Pulaski-Midway",
+"lat": 41.79988782039872,
+"lng": -87.72444964277845,
+"mode": "rail",
+"routes": [
+"Orange"
+]
+},
+{
+"name": "Francisco",
+"lat": 41.966146895889715,
+"lng": -87.70165573251133,
+"mode": "rail",
+"routes": [
+"Brown"
+]
+},
+{
+"name": "South Boulevard",
+"lat": 42.02761184862187,
+"lng": -87.67832941601363,
+"mode": "rail",
+"routes": [
+"Purple"
+]
+},
+{
+"name": "Berwyn",
+"lat": 41.97798399254405,
+"lng": -87.65866841969589,
+"mode": "rail",
+"routes": [
+"Red"
+]
+},
+{
+"name": "Southport",
+"lat": 41.94381225617526,
+"lng": -87.66360955994172,
+"mode": "rail",
+"routes": [
+"Brown"
+]
+},
+{
+"name": "51st",
+"lat": 41.80209158434365,
+"lng": -87.61850159987594,
+"mode": "rail",
+"routes": [
+"Green"
+]
+},
+{
+"name": "Linden",
+"lat": 42.0731527622841,
+"lng": -87.69072951855928,
+"mode": "rail",
+"routes": [
+"Purple"
+]
+},
+{
+"name": "Addison-O'Hare",
+"lat": 41.9473601024952,
+"lng": -87.71909930215281,
+"mode": "rail",
+"routes": [
+"Blue"
+]
+},
+{
+"name": "Austin-Lake",
+"lat": 41.887292784706375,
+"lng": -87.77413525552275,
+"mode": "rail",
+"routes": [
+"Green"
+]
+},
+{
+"name": "47th-South Elevated",
+"lat": 41.80920883501687,
+"lng": -87.61882612858349,
+"mode": "rail",
+"routes": [
+"Green"
+]
+},
+{
+"name": "O'Hare Airport",
+"lat": 41.97887673887917,
+"lng": -87.90184840013661,
+"mode": "rail",
+"routes": [
+"Blue"
+]
+},
+{
+"name": "35-Bronzeville-IIT",
+"lat": 41.831678021663535,
+"lng": -87.62588147448886,
+"mode": "rail",
+"routes": [
+"Green"
+]
+},
+{
+"name": "Irving Park-Ravenswood",
+"lat": 41.95452313953493,
+"lng": -87.67495574333226,
+"mode": "rail",
+"routes": [
+"Brown"
+]
+},
+{
+"name": "Montrose-Ravenswood",
+"lat": 41.96175171130978,
+"lng": -87.67516539063618,
+"mode": "rail",
+"routes": [
+"Brown"
+]
+},
+{
+"name": "Jefferson Park",
+"lat": 41.97063413812226,
+"lng": -87.76089227927595,
+"mode": "rail",
+"routes": [
+"Blue"
+]
+},
+{
+"name": "Diversey",
+"lat": 41.93273150100663,
+"lng": -87.65313085718888,
+"mode": "rail",
+"routes": [
+"Brown",
+"Purple"
+]
+},
+{
+"name": "Monroe/Dearborn",
+"lat": 41.88070346119076,
+"lng": -87.62937770045221,
+"mode": "rail",
+"routes": [
+"Blue"
+]
+},
+{
+"name": "Central-Lake",
+"lat": 41.887389014441396,
+"lng": -87.76564950550599,
+"mode": "rail",
+"routes": [
+"Green"
+]
+},
+{
+"name": "Cermak-Chinatown",
+"lat": 41.853205796014315,
+"lng": -87.63096782627767,
+"mode": "rail",
+"routes": [
+"Red"
+]
+},
+{
+"name": "Logan Square",
+"lat": 41.92972804225143,
+"lng": -87.7085413860205,
+"mode": "rail",
+"routes": [
+"Blue"
+]
+},
+{
+"name": "Western-Ravenswood",
+"lat": 41.96625004821776,
+"lng": -87.68850260590037,
+"mode": "rail",
+"routes": [
+"Brown"
+]
+},
+{
+"name": "Washington/Dearborn",
+"lat": 41.88316442656523,
+"lng": -87.6294400596467,
+"mode": "rail",
+"routes": [
+"Blue"
+]
+},
+{
+"name": "Damen-Lake",
+"lat": 41.884966194456915,
+"lng": -87.6768857202498,
+"mode": "rail",
+"routes": [
+"Green"
+]
+},
+{
+"name": "Wellington",
+"lat": 41.936032602681166,
+"lng": -87.65326645004653,
+"mode": "rail",
+"routes": [
+"Brown",
+"Purple"
+]
+},
+{
+"name": "Oakton-Skokie",
+"lat": 42.02624389455922,
+"lng": -87.74722101369109,
+"mode": "rail",
+"routes": [
+"Yellow"
+]
+},
+{
+"name": "UIC-Halsted",
+"lat": 41.8755162091606,
+"lng": -87.64964223079026,
+"mode": "rail",
+"routes": [
+"Blue"
+]
+},
+{
+"name": "Central Park",
+"lat": 41.85399195494557,
+"lng": -87.71488026411758,
+"mode": "rail",
+"routes": [
+"Pink"
+]
+},
+{
+"name": "Ashland-Midway",
+"lat": 41.83935587879333,
+"lng": -87.66531166332861,
+"mode": "rail",
+"routes": [
+"Orange"
+]
+},
+{
+"name": "Damen/Milwaukee",
+"lat": 41.90974379246453,
+"lng": -87.67743665449984,
+"mode": "rail",
+"routes": [
+"Blue"
+]
+},
+{
+"name": "Noyes",
+"lat": 42.05828247066971,
+"lng": -87.68333688171246,
+"mode": "rail",
+"routes": [
+"Purple"
+]
+},
+{
+"name": "Forest Park",
+"lat": 41.87425731129019,
+"lng": -87.81731777906768,
+"mode": "rail",
+"routes": [
+"Blue"
+]
+},
+{
+"name": "California-Lake",
+"lat": 41.88421953162615,
+"lng": -87.69623421620008,
+"mode": "rail",
+"routes": [
+"Green"
+]
+},
+{
+"name": "95th/Dan Ryan",
+"lat": 41.722375984242476,
+"lng": -87.62441474538349,
+"mode": "rail",
+"routes": [
+"Red"
+]
+},
+{
+"name": "Sedgwick",
+"lat": 41.910409180297236,
+"lng": -87.63930216454519,
+"mode": "rail",
+"routes": [
+"Brown",
+"Purple"
+]
+},
+{
+"name": "Illinois Medical District",
+"lat": 41.87563542876877,
+"lng": -87.67394587971816,
+"mode": "rail",
+"routes": [
+"Blue"
+]
+},
+{
+"name": "35th/Archer",
+"lat": 41.829560088047614,
+"lng": -87.68058736862578,
+"mode": "rail",
+"routes": [
+"Orange"
+]
+},
+{
+"name": "Jarvis",
+"lat": 42.01587618094786,
+"lng": -87.6690921120182,
+"mode": "rail",
+"routes": [
+"Red"
+]
+},
+{
+"name": "Adams/Wabash",
+"lat": 41.879510219372655,
+"lng": -87.62609789982032,
+"mode": "rail",
+"routes": [
+"Brown",
+"Green",
+"Orange",
+"Pink",
+"Purple"
+]
+},
+{
+"name": "Ashland-Lake",
+"lat": 41.885311395579535,
+"lng": -87.6669509366128,
+"mode": "rail",
+"routes": [
+"Green",
+"Pink"
+]
+},
+{
+"name": "Western-Douglas",
+"lat": 41.854396837500744,
+"lng": -87.68517922105977,
+"mode": "rail",
+"routes": [
+"Pink"
+]
+},
+{
+"name": "Lawrence",
+"lat": 41.96913894081545,
+"lng": -87.65849296173627,
+"mode": "rail",
+"routes": [
+"Red"
+]
+},
+{
+"name": "54th/Cermak",
+"lat": 41.851773309963825,
+"lng": -87.756692014772,
+"mode": "rail",
+"routes": [
+"Pink"
+]
+},
+{
+"name": "Sheridan",
+"lat": 41.95377494743192,
+"lng": -87.65492939219291,
+"mode": "rail",
+"routes": [
+"Red"
+]
+},
+{
+"name": "Thorndale",
+"lat": 41.990259494019185,
+"lng": -87.6590758588342,
+"mode": "rail",
+"routes": [
+"Red"
+]
+},
+{
+"name": "Kedzie-Ravenswood",
+"lat": 41.966092607037865,
+"lng": -87.70884379252877,
+"mode": "rail",
+"routes": [
+"Brown"
+]
+},
+{
+"name": "LaSalle/Van Buren",
+"lat": 41.87685533507961,
+"lng": -87.63173383435944,
+"mode": "rail",
+"routes": [
+"Brown",
+"Orange",
+"Pink",
+"Purple"
+]
+},
+{
+"name": "Harlem-Congress",
+"lat": 41.873490051902145,
+"lng": -87.80696087265021,
+"mode": "rail",
+"routes": [
+"Blue"
+]
+},
+{
+"name": "Fullerton",
+"lat": 41.9250513685894,
+"lng": -87.6528658377562,
+"mode": "rail",
+"routes": [
+"Red",
+"Brown",
+"Purple"
+]
+},
+{
+"name": "Western-Congress",
+"lat": 41.87552957397782,
+"lng": -87.68843451104553,
+"mode": "rail",
+"routes": [
+"Blue"
+]
+},
+{
+"name": "Damen-Ravenswood",
+"lat": 41.96641097276443,
+"lng": -87.67863488433056,
+"mode": "rail",
+"routes": [
+"Brown"
+]
+},
+{
+"name": "Clark/Division",
+"lat": 41.90392031283341,
+"lng": -87.63141229300709,
+"mode": "rail",
+"routes": [
+"Red"
+]
+},
+{
+"name": "Ashland/63rd",
+"lat": 41.77895340563769,
+"lng": -87.6638448484402,
+"mode": "rail",
+"routes": [
+"Green"
+]
+},
+{
+"name": "Chicago/Franklin",
+"lat": 41.89677417178116,
+"lng": -87.63594665706665,
+"mode": "rail",
+"routes": [
+"Brown",
+"Purple"
+]
+},
+{
+"name": "69th",
+"lat": 41.76836786586706,
+"lng": -87.62580935004172,
+"mode": "rail",
+"routes": [
+"Red"
+]
+},
+{
+"name": "Roosevelt/State",
+"lat": 41.86736766601225,
+"lng": -87.62740238294732,
+"mode": "rail",
+"routes": [
+"Red"
+]
+},
+{
+"name": "Morse",
+"lat": 42.00836181944307,
+"lng": -87.6659090897442,
+"mode": "rail",
+"routes": [
+"Red"
+]
+},
+{
+"name": "Monroe/State",
+"lat": 41.88074455879221,
+"lng": -87.62769645951258,
+"mode": "rail",
+"routes": [
+"Red"
+]
+},
+{
+"name": "Cermak-McCormick Place",
+"lat": 41.85311508341227,
+"lng": -87.62640238492894,
+"mode": "rail",
+"routes": [
+"Green"
+]
+},
+{
+"name": "Western/Milwaukee",
+"lat": 41.916157429131374,
+"lng": -87.6873643813982,
+"mode": "rail",
+"routes": [
+"Blue"
+]
+},
+{
+"name": "Howard",
+"lat": 42.01906322017403,
+"lng": -87.6728924507902,
+"mode": "rail",
+"routes": [
+"Red",
+"Purple",
+"Yellow"
+]
+},
+{
+"name": "Sox-35th-Dan Ryan",
+"lat": 41.831190560189036,
+"lng": -87.63063629512068,
+"mode": "rail",
+"routes": [
+"Red"
+]
+},
+{
+"name": "43rd",
+"lat": 41.81646322287744,
+"lng": -87.61903578127783,
+"mode": "rail",
+"routes": [
+"Green"
+]
+},
+{
+"name": "Clinton-Congress",
+"lat": 41.875538904999026,
+"lng": -87.64098421671696,
+"mode": "rail",
+"routes": [
+"Blue"
+]
+},
+{
+"name": "Division/Milwaukee",
+"lat": 41.90335508549131,
+"lng": -87.66649606690225,
+"mode": "rail",
+"routes": [
+"Blue"
+]
+},
+{
+"name": "87th",
+"lat": 41.73537121137496,
+"lng": -87.62475307324942,
+"mode": "rail",
+"routes": [
+"Red"
+]
+},
+{
+"name": "California/Milwaukee",
+"lat": 41.92193917150245,
+"lng": -87.6968897987879,
+"mode": "rail",
+"routes": [
+"Blue"
+]
+},
+{
+"name": "Kedzie-Midway",
+"lat": 41.804348408754976,
+"lng": -87.70432066571871,
+"mode": "rail",
+"routes": [
+"Orange"
+]
+},
+{
+"name": "Pulaski-Lake",
+"lat": 41.88541197969969,
+"lng": -87.72540376831816,
+"mode": "rail",
+"routes": [
+"Green"
+]
+},
+{
+"name": "Cicero-Lake",
+"lat": 41.88651935351997,
+"lng": -87.74469840019538,
+"mode": "rail",
+"routes": [
+"Green"
+]
+},
+{
+"name": "Pulaski-Douglas",
+"lat": 41.85385683122457,
+"lng": -87.72432672502005,
+"mode": "rail",
+"routes": [
+"Pink"
+]
+},
+{
+"name": "Belmont-North Main",
+"lat": 41.93975074615252,
+"lng": -87.65338048799256,
+"mode": "rail",
+"routes": [
+"Red",
+"Brown",
+"Purple"
+]
+},
+{
+"name": "Halsted/63rd",
+"lat": 41.779027868120906,
+"lng": -87.644023127218,
+"mode": "rail",
+"routes": [
+"Green"
+]
+},
+{
+"name": "Dempster-Skokie",
+"lat": 42.03895069338699,
+"lng": -87.75191862595247,
+"mode": "rail",
+"routes": [
+"Yellow"
+]
+},
+{
+"name": "State/Lake",
+"lat": 41.88574041081893,
+"lng": -87.62783518066094,
+"mode": "rail",
+"routes": [
+"Brown",
+"Green",
+"Orange",
+"Pink",
+"Purple"
+]
+},
+{
+"name": "Western-Midway",
+"lat": 41.80468356005486,
+"lng": -87.6840649867607,
+"mode": "rail",
+"routes": [
+"Orange"
+]
+},
+{
+"name": "Clinton-Lake",
+"lat": 41.88570342367616,
+"lng": -87.64177130414286,
+"mode": "rail",
+"routes": [
+"Green",
+"Pink"
+]
+},
+{
+"name": "Jackson/Dearborn",
+"lat": 41.87818251886981,
+"lng": -87.62929566463735,
+"mode": "rail",
+"routes": [
+"Blue"
+]
+},
+{
+"name": "Jackson/State",
+"lat": 41.87815275695708,
+"lng": -87.62759609756428,
+"mode": "rail",
+"routes": [
+"Red"
+]
+},
+{
+"name": "Damen",
+"lat": 41.854514862029305,
+"lng": -87.67597409605341,
+"mode": "rail",
+"routes": [
+"Pink"
+]
+},
+{
+"name": "Oak Park-Congress",
+"lat": 41.8721079742148,
+"lng": -87.79160214979832,
+"mode": "rail",
+"routes": [
+"Blue"
+]
+},
+{
+"name": "Bryn Mawr",
+"lat": 41.983504225254826,
+"lng": -87.65884028505945,
+"mode": "rail",
+"routes": [
+"Red"
+]
+},
+{
+"name": "Granville",
+"lat": 41.99366426103332,
+"lng": -87.65920227948938,
+"mode": "rail",
+"routes": [
+"Red"
+]
+},
+{
+"name": "Paulina",
+"lat": 41.94370914853046,
+"lng": -87.67088394357924,
+"mode": "rail",
+"routes": [
+"Brown"
+]
+},
+{
+"name": "Austin-Congress",
+"lat": 41.87088639373906,
+"lng": -87.77678526925513,
+"mode": "rail",
+"routes": [
+"Blue"
+]
+},
+{
+"name": "Kimball",
+"lat": 41.96792815152359,
+"lng": -87.71314203532829,
+"mode": "rail",
+"routes": [
+"Brown"
+]
+},
+{
+"name": "Grand/State",
+"lat": 41.891665201383724,
+"lng": -87.62802125739587,
+"mode": "rail",
+"routes": [
+"Red"
+]
+},
+{
+"name": "Kedzie-Douglas",
+"lat": 41.854130586664574,
+"lng": -87.70542795670059,
+"mode": "rail",
+"routes": [
+"Pink"
+]
+},
+{
+"name": "Conservatory-Central Park",
+"lat": 41.88490437974896,
+"lng": -87.71652283291752,
+"mode": "rail",
+"routes": [
+"Green"
+]
+},
+{
+"name": "Kostner",
+"lat": 41.85375068701122,
+"lng": -87.73326365861335,
+"mode": "rail",
+"routes": [
+"Pink"
+]
+},
+{
+"name": "Harlem-O'Hare",
+"lat": 41.982323370406654,
+"lng": -87.80889493503287,
+"mode": "rail",
+"routes": [
+"Blue"
+]
+}
+]

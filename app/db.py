@@ -99,6 +99,28 @@ CREATE TABLE IF NOT EXISTS search_turn (
     created_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_turn_session ON search_turn(session_id);
+
+-- Overpass results, cached FOREVER. Buildings do not move, and Overpass 429/504s under
+-- request-time load -- so this is an INGEST-time fetch, never a search-time one.
+CREATE TABLE IF NOT EXISTS poi (
+    id         INTEGER PRIMARY KEY,
+    listing_id INTEGER REFERENCES listing(id) ON DELETE CASCADE,
+    category   TEXT NOT NULL,
+    name       TEXT,
+    lat REAL, lng REAL, meters REAL,
+    fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_poi_listing ON poi(listing_id);
+
+CREATE TABLE IF NOT EXISTS transit_nearby (
+    id         INTEGER PRIMARY KEY,
+    listing_id INTEGER REFERENCES listing(id) ON DELETE CASCADE,
+    mode       TEXT NOT NULL,      -- rail | ferry | bus
+    route      TEXT,
+    name       TEXT,
+    meters     REAL
+);
+CREATE INDEX IF NOT EXISTS idx_transit_listing ON transit_nearby(listing_id);
 """
 
 

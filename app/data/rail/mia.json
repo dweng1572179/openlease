@@ -1,0 +1,310 @@
+[
+{
+"name": "UHEALTH / JACKSON",
+"lat": 25.7896763370415,
+"lng": -80.2150356650712,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "NORTHSIDE",
+"lat": 25.8458039101236,
+"lng": -80.2487819405278,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "BRICKELL",
+"lat": 25.7638247041087,
+"lng": -80.1954654803311,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "SANTA CLARA",
+"lat": 25.7958055747008,
+"lng": -80.2152061464475,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "UNIVERSITY",
+"lat": 25.7148216707079,
+"lng": -80.2769780360869,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "EARLINGTON HEIGHTS",
+"lat": 25.8124526579406,
+"lng": -80.2299526080806,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "HISTORIC OVERTOWN/LYRIC THEATRE",
+"lat": 25.7809987134801,
+"lng": -80.1962846639201,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "VIZCAYA",
+"lat": 25.7497012081182,
+"lng": -80.2117678572739,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "DOUGLAS ROAD",
+"lat": 25.7327571594192,
+"lng": -80.2548721839808,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "MIAMI INTERNATIONAL AIRPORT",
+"lat": 25.7974120297839,
+"lng": -80.2593711167053,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "ALLAPATTAH",
+"lat": 25.8086994803344,
+"lng": -80.2154648693341,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "PALMETTO",
+"lat": 25.8434055325577,
+"lng": -80.323747041792,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "GOVERNMENT CENTER",
+"lat": 25.7760426366229,
+"lng": -80.1961007931545,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "DADELAND NORTH",
+"lat": 25.6919409363619,
+"lng": -80.3051110519468,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "HIALEAH",
+"lat": 25.8411808281174,
+"lng": -80.2790352571393,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "SOUTH MIAMI",
+"lat": 25.7050423963525,
+"lng": -80.2890817026632,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "COCONUT GROVE",
+"lat": 25.7398185624074,
+"lng": -80.238851535779,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "TRI-RAIL",
+"lat": 25.8454417481873,
+"lng": -80.2597953038774,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "DR. MARTIN LUTHER KING, JR. PLAZA",
+"lat": 25.8323910307904,
+"lng": -80.2411978957753,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "CULMER",
+"lat": 25.7845602964784,
+"lng": -80.207546169799,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "OKEECHOBEE",
+"lat": 25.8398109069014,
+"lng": -80.3015708057851,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "DADELAND SOUTH",
+"lat": 25.6850026319916,
+"lng": -80.3136883684005,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "BROWNSVILLE",
+"lat": 25.8220701625555,
+"lng": -80.2407146183221,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "BRICKELL",
+"lat": 25.7626686514899,
+"lng": -80.1952640079758,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "ELEVENTH STREET",
+"lat": 25.7848704472276,
+"lng": -80.1907931089764,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "FREEDOM TOWER",
+"lat": 25.7805491827818,
+"lng": -80.1905702118015,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "MIAMI WORLDCENTER",
+"lat": 25.7824806611056,
+"lng": -80.1906461778335,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "FIFTH STREET",
+"lat": 25.7691697634577,
+"lng": -80.1922515552812,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "MUSEUM PARK",
+"lat": 25.785922718002,
+"lng": -80.1879375461478,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "EIGHTH STREET",
+"lat": 25.766892369629,
+"lng": -80.1921245433815,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "WILKIE D. FERGUSON, JR.",
+"lat": 25.7788199997062,
+"lng": -80.1953438502382,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "FIRST STREET",
+"lat": 25.7757302705768,
+"lng": -80.1898517913396,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "SCHOOL BOARD",
+"lat": 25.78938049111,
+"lng": -80.193147744253,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "BAYFRONT PARK",
+"lat": 25.7731041022977,
+"lng": -80.1873259398647,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "TENTH STREET/PROMENADE",
+"lat": 25.7640209156012,
+"lng": -80.192563656062,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "GOVERNMENT CENTER",
+"lat": 25.7758687667511,
+"lng": -80.1960966474295,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "KNIGHT CENTER",
+"lat": 25.7718697832172,
+"lng": -80.1913805784261,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "ADRIENNE ARSHT CENTER",
+"lat": 25.7894610429048,
+"lng": -80.1880010067328,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "RIVERWALK",
+"lat": 25.7710560261662,
+"lng": -80.192561251272,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "FINANCIAL DISTRICT",
+"lat": 25.7603860934224,
+"lng": -80.1928840959037,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "COLLEGE/BAYSIDE",
+"lat": 25.7775884443157,
+"lng": -80.1899183681802,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "THIRD STREET",
+"lat": 25.7720281988983,
+"lng": -80.1935112538209,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "MIAMI AVENUE",
+"lat": 25.7733953098504,
+"lng": -80.1935853836965,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "COLLEGE NORTH",
+"lat": 25.7789307554307,
+"lng": -80.1920886035836,
+"mode": "rail",
+"routes": []
+}
+]

@@ -3537,6 +3537,24 @@ def _normalize(e: dict) -> dict | None:
     return None
 ```
 
+> **Correction (Task 7, verified live 2026-07-11/12):** two real defects found hitting
+> `overpass-api.de` for the fixture captures below:
+>
+> 1. **`overpass-api.de` returns HTTP 406 to httpx's default `User-Agent`** header
+>    (`python-httpx/x.y.z`). Confirmed with a clean A/B on the same query, same endpoint,
+>    back-to-back: default UA → 406 (×3); `curl/8.0` or an identifying bot UA → 200. Every
+>    call in `fetch()` now sends `headers={"User-Agent": settings.crawl_user_agent}`.
+> 2. **`[timeout:60]` is marginal for the full 9-category + bus-stop query over a dense
+>    downtown point.** The Empire State Building fixture capture 504'd twice at
+>    `[timeout:60]`/`timeout=90.0` and succeeded at `[timeout:120]`/`timeout=150.0`, taking
+>    ~43s of real server-side compute once it did. Since this call is INGEST-TIME ONLY and
+>    cached forever, there is no cost to more headroom — but a false "mirror is down" on
+>    exactly the densest, highest-POI-count addresses is a real cost. `_query()` now emits
+>    `[out:json][timeout:120]`, and `fetch()`'s httpx timeout is `150.0`.
+>
+> Both fixes are in `app/providers/overpass.py`; see `task-7-report.md` for the raw
+> before/after HTTP evidence.
+
 - [ ] **Step 4: Write `providers/osrm.py`**
 
 ```python
@@ -3590,6 +3608,14 @@ def drive_minutes(lat: float, lng: float, metro: str) -> dict[str, float]:
         return haversine_fallback(lat, lng, metro)
 ```
 
+> **Correction (Task 7):** two small additions, neither changing the documented behavior:
+> `fetch()` now sends `headers={"User-Agent": settings.crawl_user_agent}` (OSRM's public
+> router didn't require this live, unlike Overpass — but it costs nothing and matches the
+> rest of the app's outbound-request etiquette). And the bare `except Exception: return
+> haversine_fallback(...)` now logs a WARNING naming the exception before falling back —
+> matching this codebase's one hard rule about fallbacks ("a silent fallback hid a 400 for
+> OpenProp's entire life", constraints.md) instead of swallowing it silently.
+
 - [ ] **Step 5: Write `providers/geosearch.py` and `providers/rail.py`**
 
 `geosearch.py` — NYC's free, keyless geocoder; it is also how we get a BBL, which is the
@@ -3623,6 +3649,12 @@ def geocode(address: str) -> dict | None:
     return {"lat": lat, "lng": lng, "bbl": str(bbl) if bbl else None,
             "borough": props.get("borough"), "matched": props.get("label")}
 ```
+
+> **Correction (Task 7, verified live):** `fetch()` sends the same
+> `headers={"User-Agent": settings.crawl_user_agent}` as the other two providers. GeoSearch
+> answered fine with httpx's default UA in manual testing (real response captured for "350
+> 5th Ave, New York, NY" → `bbl: "1008350041"`, `borough: "Manhattan"`), so this isn't fixing
+> an observed failure — it's the same low-cost consistency change as `osrm.py`.
 
 `rail.py` — the bundled stations. **No API, no failure mode**:
 
@@ -3745,6 +3777,35 @@ if __name__ == "__main__":
             print(f"{fn.__name__} FAILED: {type(e).__name__}: {e}")
 ```
 
+> **Correction (Task 7, verified live 2026-07-11/12):** two real bugs found running this
+> against the actual endpoints, both silent (neither raises — they just produce the wrong
+> row count):
+>
+> 1. **`nyc()`'s dedup key was wrong.** `data.ny.gov/resource/39hk-dx4f.json` returns 496
+>    rows with a UNIQUE `gtfs_stop_id` per row, but `stop_name` is NOT unique — 76 names
+>    repeat across distinct physical stops on different lines/divisions (e.g. "Canal St" is
+>    6 separate stops, "Times Sq-42 St" is 4). Deduping on `name in seen` as originally
+>    written collapsed 496 rows to **379**, silently discarding 117 real stations. Fixed:
+>    dedup on `gtfs_stop_id` instead (confirmed 496 unique of 496 rows).
+> 2. **`chi()`'s field names don't exist in the live dataset.** `3tzw-cg4m`'s schema has
+>    changed since the plan was drafted: there is no `station_name` column, no `location`
+>    object, and no per-line boolean columns (`red`, `blue`, `g`, …). Every row's `name` was
+>    `None`, so `if not (name and lat and lng): continue` skipped **all 145 rows**, writing
+>    an EMPTY `chi.json` every time — an ingest-time silent-zero, exactly the failure mode
+>    this whole task is designed to avoid, just one layer up (bad upstream schema instead of
+>    an empty Overpass response). The real columns are `longname` (station name), `the_geom`
+>    (a GeoJSON Point, `coordinates: [lng, lat]`), and a free-text `lines` field like
+>    `"Brown, Orange, Pink, Purple (Express), Green"`. Fixed: read `longname`/`the_geom`,
+>    dedup on the real `station_id` (145 unique of 145 rows), and recover route colors by
+>    searching `lines` for the 8 CTA line-color names (`Red`, `Blue`, `Brown`, `Green`,
+>    `Orange`, `Pink`, `Purple`, `Yellow`) instead of reading nonexistent boolean columns.
+>
+> Both were caught by actually running the script against the live endpoints (per this
+> task's Step 6 instructions) rather than trusting the plan's code — see `task-7-report.md`
+> for the raw request/response evidence. `app/data/rail/refresh.py` has the corrected code;
+> the real generated bundles (committed) come out to NYC 496 / Miami 44 / LA 111 / Chicago
+> 145 — matching the spec exactly.
+
 Generate the bundles (this is a build step, run once; the JSON is committed):
 
 ```bash
@@ -3808,6 +3869,31 @@ def embedder():
     from .providers.voyage import VoyageEmbedder
     return VoyageEmbedder()
 ```
+
+> **Correction (Task 7):** `parcel_provider`'s bare `except ModuleNotFoundError: return
+> None` has the exact same latent bug `settings_store.save()`'s guard was written to avoid
+> (see that file's Step 5/review correction above): it would swallow a ModuleNotFoundError
+> raised from *inside* an already-built `parcel_nyc.py` (e.g. a typo'd import in Task 9) and
+> silently reinterpret a real bug as "not built yet." Fixed with the same `exc.name` check:
+>
+> ```python
+> @lru_cache
+> def parcel_provider(metro: str):
+>     mod = {"nyc": "parcel_nyc", "mia": "parcel_miami",
+>            "la": "parcel_la", "chi": "parcel_chicago"}.get(metro)
+>     if not mod:
+>         return None
+>     import importlib
+>     full_name = f"{__package__}.providers.{mod}"
+>     try:
+>         return importlib.import_module(full_name)
+>     except ModuleNotFoundError as exc:
+>         if exc.name != full_name:
+>             raise   # a real bug inside an already-built module — don't hide it
+>         return None  # THIS module doesn't exist yet (not built until T9)
+> ```
+>
+> Covered by `tests/test_registry.py::test_parcel_provider_does_not_swallow_a_real_bug_inside_a_built_module`.
 
 - [ ] **Step 8: Capture the Overpass fixture that Task 8 tests against**
 

@@ -1,0 +1,779 @@
+[
+{
+"name": "Downtown Long Beach Station",
+"lat": 33.768071,
+"lng": -118.192921,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Pacific Ave Station",
+"lat": 33.772258,
+"lng": -118.1937,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Anaheim Street Station",
+"lat": 33.78183,
+"lng": -118.189384,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Pacific Coast Hwy Station",
+"lat": 33.78909,
+"lng": -118.189382,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Willow Street Station",
+"lat": 33.807079,
+"lng": -118.189834,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Wardlow Station",
+"lat": 33.819865,
+"lng": -118.19609,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Del Amo Station",
+"lat": 33.848222,
+"lng": -118.211017,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Artesia Station",
+"lat": 33.876082,
+"lng": -118.222503,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Compton Station",
+"lat": 33.89749,
+"lng": -118.224249,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Willowbrook - Rosa Parks Station",
+"lat": 33.928048,
+"lng": -118.237555,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "103rd Street / Watts Towers Station",
+"lat": 33.94222,
+"lng": -118.243159,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Firestone Station",
+"lat": 33.959611,
+"lng": -118.243205,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Florence Station",
+"lat": 33.97374,
+"lng": -118.243271,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Slauson Station",
+"lat": 33.98876,
+"lng": -118.243398,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Vernon Station",
+"lat": 34.00292,
+"lng": -118.243303,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Washington Station",
+"lat": 34.01965,
+"lng": -118.243084,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "San Pedro Street Station",
+"lat": 34.026807,
+"lng": -118.255505,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Grand / LATTC Station",
+"lat": 34.033155,
+"lng": -118.269333,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Pico Station",
+"lat": 34.040735,
+"lng": -118.266118,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "7th Street / Metro Center Station",
+"lat": 34.04861,
+"lng": -118.258822,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "LATTC / Ortho Institute Station",
+"lat": 34.029112,
+"lng": -118.273603,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Jefferson / USC Station",
+"lat": 34.022123,
+"lng": -118.278118,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Expo Park / USC Station",
+"lat": 34.018227,
+"lng": -118.285734,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Expo / Vermont Station",
+"lat": 34.018245,
+"lng": -118.29154,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Expo / Western Station",
+"lat": 34.018331,
+"lng": -118.30891,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Expo / Crenshaw E-Line Station",
+"lat": 34.022526,
+"lng": -118.335078,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Farmdale Station",
+"lat": 34.023981,
+"lng": -118.346095,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Expo / La Brea / Ethel Bradley Station",
+"lat": 34.024803,
+"lng": -118.355159,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "La Cienega / Jefferson Station",
+"lat": 34.026355,
+"lng": -118.37212,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Culver City Station",
+"lat": 34.027896,
+"lng": -118.388986,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Palms Station",
+"lat": 34.029323,
+"lng": -118.404255,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Westwood / Rancho Park Station",
+"lat": 34.036816,
+"lng": -118.424576,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Expo / Sepulveda Station",
+"lat": 34.035408,
+"lng": -118.434234,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Expo / Bundy Station",
+"lat": 34.031705,
+"lng": -118.452896,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "26th Street / Bergamot Station",
+"lat": 34.027995,
+"lng": -118.46912,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "17th Street / SMC Station",
+"lat": 34.023155,
+"lng": -118.480372,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Downtown Santa Monica Station",
+"lat": 34.01401,
+"lng": -118.491384,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "1st Street Station",
+"lat": 33.76874,
+"lng": -118.189362,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "5th Street Station",
+"lat": 33.773598,
+"lng": -118.189412,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Glendora Station",
+"lat": 34.1319,
+"lng": -117.8663,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "San Dimas Station",
+"lat": 34.1052,
+"lng": -117.8058,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "La Verne / Fairplex Station",
+"lat": 34.0972,
+"lng": -117.7681,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Pomona North Station",
+"lat": 34.094,
+"lng": -117.7522,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "North Hollywood Station",
+"lat": 34.168504,
+"lng": -118.376808,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Universal / Studio City Station",
+"lat": 34.140002,
+"lng": -118.362699,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Hollywood / Highland Station",
+"lat": 34.101547,
+"lng": -118.338549,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Hollywood / Vine Station",
+"lat": 34.10163,
+"lng": -118.32518,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Hollywood / Western Station",
+"lat": 34.101737,
+"lng": -118.308117,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Vermont / Sunset Station",
+"lat": 34.097708,
+"lng": -118.291756,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Vermont / Santa Monica Station",
+"lat": 34.08991,
+"lng": -118.29173,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Vermont / Beverly Station",
+"lat": 34.076526,
+"lng": -118.291686,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Wilshire / Vermont Station",
+"lat": 34.062701,
+"lng": -118.290082,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Westlake / MacArthur Park Station",
+"lat": 34.056368,
+"lng": -118.274879,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Pershing Square Station",
+"lat": 34.049316,
+"lng": -118.251259,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Civic Center / Grand Park Station",
+"lat": 34.0549,
+"lng": -118.246057,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Union Station",
+"lat": 34.056197,
+"lng": -118.234249,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Wilshire / Normandie Station",
+"lat": 34.061753,
+"lng": -118.301458,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Wilshire / Western Station",
+"lat": 34.061689,
+"lng": -118.308756,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Wilshire / La Brea Station",
+"lat": 34.06221475,
+"lng": -118.3434467,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Wilshire / Fairfax Station",
+"lat": 34.06296708,
+"lng": -118.3611657,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Wilshire / La Cienega Station",
+"lat": 34.06483444,
+"lng": -118.3747009,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Redondo Beach Station",
+"lat": 33.89464,
+"lng": -118.369196,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Douglas Station",
+"lat": 33.905299,
+"lng": -118.383113,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "El Segundo Station",
+"lat": 33.916063,
+"lng": -118.386539,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Mariposa Station",
+"lat": 33.9232,
+"lng": -118.387572,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Aviation / Imperial Station",
+"lat": 33.929621,
+"lng": -118.377134,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Hawthorne / Lennox Station",
+"lat": 33.933408,
+"lng": -118.351602,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Crenshaw Station",
+"lat": 33.925201,
+"lng": -118.32655,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Vermont / Athens Station",
+"lat": 33.928683,
+"lng": -118.291733,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Harbor Freeway Station",
+"lat": 33.928714,
+"lng": -118.2811,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Avalon Station",
+"lat": 33.927465,
+"lng": -118.265217,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Lynwood Station",
+"lat": 33.92488,
+"lng": -118.209945,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Lakewood Blvd Station",
+"lat": 33.91307,
+"lng": -118.1406,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Norwalk Station",
+"lat": 33.914033,
+"lng": -118.104717,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Atlantic Station",
+"lat": 34.033398,
+"lng": -118.154469,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "East LA Civic Center Station",
+"lat": 34.033364,
+"lng": -118.161206,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Maravilla Station",
+"lat": 34.033319,
+"lng": -118.16814,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Indiana Station",
+"lat": 34.0343,
+"lng": -118.192182,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Soto Station",
+"lat": 34.043747,
+"lng": -118.210061,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Mariachi Plaza / Boyle Heights Station",
+"lat": 34.047215,
+"lng": -118.219648,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Pico / Aliso Station",
+"lat": 34.047634,
+"lng": -118.22594,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Chinatown Station",
+"lat": 34.063861,
+"lng": -118.23584,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Lincoln Heights / Cypress Park Station",
+"lat": 34.080949,
+"lng": -118.220429,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Heritage Square / Arroyo Station",
+"lat": 34.087227,
+"lng": -118.213213,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Southwest Museum Station",
+"lat": 34.098243,
+"lng": -118.206712,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Highland Park Station",
+"lat": 34.111179,
+"lng": -118.192606,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "South Pasadena Station",
+"lat": 34.115186,
+"lng": -118.157886,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Fillmore Station",
+"lat": 34.133521,
+"lng": -118.148126,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Del Mar Station",
+"lat": 34.14191,
+"lng": -118.148214,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Memorial Park Station",
+"lat": 34.148356,
+"lng": -118.147512,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Lake Station",
+"lat": 34.151806,
+"lng": -118.13139,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Allen Station",
+"lat": 34.152417,
+"lng": -118.114348,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Sierra Madre Villa Station",
+"lat": 34.147752,
+"lng": -118.081212,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Arcadia Station",
+"lat": 34.14286,
+"lng": -118.029199,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Monrovia Station",
+"lat": 34.133155,
+"lng": -118.003473,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Duarte / City of Hope Station",
+"lat": 34.132518,
+"lng": -117.96768,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Irwindale Station",
+"lat": 34.129048,
+"lng": -117.932506,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Azusa Downtown Station",
+"lat": 34.135863,
+"lng": -117.906631,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "APU / Citrus College Station",
+"lat": 34.136814,
+"lng": -117.891636,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Aviation / Century Station",
+"lat": 33.94557205,
+"lng": -118.378683,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "LAX / Metro Transit Center",
+"lat": 33.9500753,
+"lng": -118.37866,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Westchester / Veterans Station",
+"lat": 33.96203144,
+"lng": -118.374378,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Downtown Inglewood Station",
+"lat": 33.96715635,
+"lng": -118.3514966,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Fairview Heights Station",
+"lat": 33.97525155,
+"lng": -118.3360716,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Hyde Park Station",
+"lat": 33.98818653,
+"lng": -118.3308158,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Leimert Park Station",
+"lat": 34.00390927,
+"lng": -118.3320162,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Martin Luther King Jr Station",
+"lat": 34.00956339,
+"lng": -118.3353594,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Expo / Crenshaw K-Line Station",
+"lat": 34.02215554,
+"lng": -118.3348508,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Grand Ave Arts / Bunker Hill Station",
+"lat": 34.05472448,
+"lng": -118.2515307,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Historic Broadway Station",
+"lat": 34.05215607,
+"lng": -118.2463211,
+"mode": "rail",
+"routes": []
+},
+{
+"name": "Little Tokyo / Arts District Station",
+"lat": 34.04884524,
+"lng": -118.2387567,
+"mode": "rail",
+"routes": []
+}
+]
