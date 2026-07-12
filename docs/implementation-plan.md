@@ -4398,6 +4398,52 @@ which the listing page renders as "not published here" — never a blank, never 
   - `normalize(raw: dict) -> Parcel` — pure, no network; this is what the tests hit
   - `db.save_parcel(p: Parcel) -> str` (returns `parcel_id`), `db.get_parcel(parcel_id: str) -> dict | None`
 
+> **Reality check (landed 2026-07-12) — every one of the four endpoints below had drifted
+> from what this plan assumed.** Same lesson as Task 7's rail schema: an endpoint that's
+> "verified live" on the day the spec was written can still be pointing at the wrong
+> resource, or the wrong field name, or a resource that's been quietly split in two. The
+> code blocks below are corrected to what's ACTUALLY live; nothing here was theoretical —
+> every fix was found by running the real capture script in Step 6 and staring at a
+> `NO MATCH` or an empty attribute where a value should have been:
+> - **NYC (`64uk-42ks`)**: field names held (`ownername`, `zonedist1`, `builtfar`, ...). The
+>   one surprise: PLUTO's `bbl` column comes back as `"1008350041.00000000"`, not the clean
+>   10-digit string GeoSearch hands us — used verbatim it makes every `parcel_id` ugly
+>   (`nyc:1008350041.00000000`). Added `_clean_bbl()`.
+> - **Miami (`PaGISView_gdb`)**: `BLDG_ACTUAL_AREA` is really `BUILDING_ACTUAL_AREA`. There
+>   is no `MUNICIPALITY`/`MUNIC_NAME` field — the municipality is `TRUE_SITE_CITY`. Worse:
+>   `M21_Zoning` is not a layer on the county's ArcGIS org at all (`Invalid URL`) — the City
+>   of Miami's Miami 21 zoning lives on the CITY's own GIS server, as a **MapServer** (not
+>   FeatureServer) at `gis.miami.gov/gis/rest/services/Zoning/ZoningMiami21/MapServer/5`,
+>   field `M21_ZONE` (the plan's guessed field name, `ZONE`, doesn't exist). Also: house
+>   numbers on numbered streets lose their ordinal in `TRUE_SITE_ADDR` ("2801 NW 2 AVE",
+>   never "2ND") — the brief's own test address, "2618 NW 2nd Ave", doesn't exist in the PA
+>   database at all (confirmed by direct query, not just our LIKE filter) and had to be
+>   swapped for a real Wynwood folio.
+> - **LA (`LACounty_Parcel`)**: there is no flat `YearBuilt`/`SQFTmain`/`Units` column — a
+>   parcel can carry up to 5 structures, so every one of those is numbered `1`..`5`
+>   (`YearBuilt1`, `SQFTmain1`, `Units1`, ...); we read design 1. There is also no
+>   standalone lot-size attribute at all — the fix reads the ArcGIS-computed
+>   `Shape.STArea()` (returned free by `outFields=*`), the parcel polygon's own area.
+> - **Chicago**: the deepest drift, three datasets deep. `3723-97qp`'s real address column
+>   is `prop_address_full`, not `property_address` — AND that dataset already carries
+>   `owner_address_name`/`mail_address_name`, meaning the owner join the plan expected from
+>   the attrs dataset lives here instead. `pabr-t5kh` ("Parcel Universe") turned out to be
+>   pure geographic/tax-district reference data (township, census tract, school district) —
+>   it has no year/sqft/stories/owner columns of any kind; the real building-characteristics
+>   dataset is `x54s-btds` ("Single and Multi-Family Improvement Characteristics"), keyed by
+>   `char_yrblt` / `char_bldg_sf` / `char_land_sf` / `char_type_resd` (a STRING like
+>   `"3 Story +"`, not a number — floors is parsed from its leading digit). And `7cve-jgbp`
+>   is an `assetType: "map"` visualization asset with zero queryable SODA rows
+>   (`$select=*` returns `{}`) — the real tabular resource behind it is `dj47-wfun` (the
+>   plan's guessed field name, `zone_class`, was correct; only the dataset ID was wrong).
+>
+> `tests/test_registry.py` also needed updating: its Task-7-era assertions
+> (`test_parcel_provider_is_none_for_every_metro_until_task_9`, and the non-NYC geocoder
+> test) asserted `None` because no `parcel_*` module existed yet. Landing this task made
+> both assertions fail for the right reason — they were testing the ABSENCE of what this
+> task builds. Replaced with `test_parcel_provider_is_the_matching_module_for_every_metro`
+> and updated the geocoder test to assert delegation, not `None`.
+
 - [ ] **Step 1: Add parcel persistence to `db.py`**
 
 ```python
@@ -4435,7 +4481,12 @@ def get_parcel(parcel_id: str) -> dict | None:
 ```python
 """NYC — PLUTO on Socrata, joined by BBL (from GeoSearch). The one gotcha: `bbl` is a
 NUMBER column, so it must be filtered UNQUOTED (`?bbl=1000160100`, not `?bbl='1000…'`) or
-Socrata returns nothing at all. PLUTO refreshes ~2x/year, so a parcel is cached forever."""
+Socrata returns nothing at all. PLUTO refreshes ~2x/year, so a parcel is cached forever.
+
+Verified live 2026-07-12: PLUTO's own `bbl` column in the JSON response is NOT the clean
+10-digit string GeoSearch hands us — Socrata serializes this NUMBER column with full
+decimal precision, e.g. "1008350041.00000000". Used verbatim that turns every parcel_id
+into `nyc:1008350041.00000000`; _clean_bbl() below strips it back to the integer BBL."""
 import json
 
 import httpx
@@ -4447,6 +4498,10 @@ from . import geosearch
 SOCRATA = "https://data.cityofnewyork.us/resource/64uk-42ks.json"
 
 
+def _clean_bbl(v) -> str:
+    return str(int(float(v)))
+
+
 def normalize(raw: dict) -> Parcel:
     def num(k, cast=float):
         v = raw.get(k)
@@ -4456,7 +4511,7 @@ def normalize(raw: dict) -> Parcel:
             return None
 
     return Parcel(
-        parcel_id=f"nyc:{raw['bbl']}", metro="nyc",
+        parcel_id=f"nyc:{_clean_bbl(raw['bbl'])}", metro="nyc",
         owner_name=raw.get("ownername") or None,
         zoning=raw.get("zonedist1") or None,
         far_built=num("builtfar"), far_allowed=num("commfar") or num("residfar"),
@@ -4493,8 +4548,20 @@ Downtown, because those are incorporated cities that zone themselves. A naive re
 zero looks like "no zoning" and would silently blank the field for the exact neighborhoods
 the app is most used in. So we branch to the municipal layer when the parcel is inside a
 known city, and when we have no branch for a municipality we return zoning=None WITH the
-reason — never an empty string."""
+reason — never an empty string.
+
+Verified live 2026-07-12 (plan said otherwise on three counts — see docs/implementation-plan.md
+Task 9 correction):
+  - The PA layer's actual field is `BUILDING_ACTUAL_AREA`, not `BLDG_ACTUAL_AREA`.
+  - There is no `MUNICIPALITY`/`MUNIC_NAME` field at all — the municipality the parcel sits
+    in is `TRUE_SITE_CITY`.
+  - `M21_Zoning` is not a layer on the county's ArcGIS org — the City of Miami's zoning
+    (Miami 21) is hosted on the CITY's own GIS server, a MapServer (not FeatureServer) at
+    `gis.miami.gov/.../ZoningMiami21/MapServer/5`, and the zone-code field is `M21_ZONE`
+    (brief guessed `ZONE`). House-numbered street addresses also lose their ordinal suffix
+    in TRUE_SITE_ADDR ("2801 NW 2 AVE", never "2ND") — stripped before the LIKE query."""
 import json
+import re
 
 import httpx
 
@@ -4505,11 +4572,12 @@ PA = ("https://services.arcgis.com/8Pc9XBTAsYuxx9Ny/arcgis/rest/services/"
       "PaGISView_gdb/FeatureServer/0/query")
 # City of Miami covers Brickell / Wynwood / Downtown / Little Havana / Coconut Grove.
 MUNI_ZONING = {
-    "MIAMI": ("https://services.arcgis.com/8Pc9XBTAsYuxx9Ny/arcgis/rest/services/"
-              "M21_Zoning/FeatureServer/0/query", "ZONE"),
+    "MIAMI": ("https://gis.miami.gov/gis/rest/services/Zoning/ZoningMiami21/MapServer/5/query",
+              "M21_ZONE"),
 }
 NO_BRANCH = ("Zoning here is set by the municipality, and OpenLease has no layer wired "
              "for it yet. The county layer covers unincorporated Miami-Dade only.")
+_ORDINAL = re.compile(r"(\d+)(ST|ND|RD|TH)\b")  # Miami-Dade's addressing drops ordinals
 
 
 def normalize(raw: dict, zoning: str | None = None,
@@ -4529,7 +4597,7 @@ def normalize(raw: dict, zoning: str | None = None,
         owner_name=raw.get("TRUE_OWNER1") or None,
         zoning=zoning,
         year_built=num("YEAR_BUILT", int), lot_sqft=num("LOT_SIZE", int),
-        bldg_sqft=num("BLDG_ACTUAL_AREA", int), floors=num("FLOOR_COUNT", int),
+        bldg_sqft=num("BUILDING_ACTUAL_AREA", int), floors=num("FLOOR_COUNT", int),
         units=num("UNIT_COUNT", int), use_code=raw.get("DOR_DESC") or None,
         missing_reason=missing, raw_json=json.dumps(raw),
     )
@@ -4557,20 +4625,22 @@ def _zoning(muni: str, lat: float, lng: float) -> tuple[str | None, str | None]:
 
 
 def lookup(address: str, lat: float | None = None, lng: float | None = None) -> Parcel | None:
+    street = _ORDINAL.sub(r"\1", address.split(",")[0].upper())
+
     def fetch():
         r = httpx.get(PA, params={
-            "where": f"TRUE_SITE_ADDR LIKE '{address.split(',')[0].upper()}%'",
+            "where": f"TRUE_SITE_ADDR LIKE '{street}%'",
             "outFields": "*", "returnGeometry": "false", "resultRecordCount": 1,
             "f": "json"}, timeout=30.0)
         r.raise_for_status()
         return r.json()
 
-    data = cached("miami_pa", "address", {"addr": address}, fetch)
+    data = cached("miami_pa", "address", {"addr": street}, fetch)
     feats = data.get("features") or []
     if not feats:
         return None
     raw = feats[0]["attributes"]
-    muni = raw.get("MUNICIPALITY") or raw.get("MUNIC_NAME") or ""
+    muni = raw.get("TRUE_SITE_CITY") or ""
     z, reason = (_zoning(muni, lat, lng) if lat and lng else (None, NO_BRANCH))
     return normalize(raw, z, reason)
 ```
@@ -4584,7 +4654,15 @@ There is NO owner name, and there never will be: California statute does not mak
 owner-of-record free and public through the county's open GIS. An LA listing therefore
 shows fewer fields BY DESIGN. That is a documented `missing_reason`, not a bug and not a
 scraping opportunity — if the UI ever renders a blank there instead of the reason, the app
-is lying about what it knows."""
+is lying about what it knows.
+
+Verified live 2026-07-12 (plan said otherwise — see docs/implementation-plan.md Task 9
+correction): there is no flat `YearBuilt`/`SQFTmain`/`Units` column. A parcel can carry up
+to 5 separate structures ("designs"), so the Assessor numbers every building field
+`YearBuilt1..5` / `SQFTmain1..5` / `Units1..5`; we read design 1 (the primary structure).
+There is also no standalone lot-size attribute — `outFields=*` already returns the
+ArcGIS-computed `Shape.STArea()` (the parcel polygon's own area, in the service's native
+square feet), which is the only honest source for `lot_sqft` here."""
 import json
 
 import httpx
@@ -4611,8 +4689,8 @@ def normalize(raw: dict) -> Parcel:
         parcel_id=f"la:{raw['AIN']}", metro="la",
         owner_name=None,                      # never available — see OWNER_REASON
         zoning=None,
-        year_built=num("YearBuilt", int), lot_sqft=num("SQFTmain", int),
-        bldg_sqft=num("SQFTmain", int), units=num("Units", int),
+        year_built=num("YearBuilt1", int), lot_sqft=num("Shape.STArea()", int),
+        bldg_sqft=num("SQFTmain1", int), units=num("Units1", int),
         use_code=raw.get("UseType") or raw.get("UseDescription") or None,
         missing_reason={"owner_name": OWNER_REASON, "zoning": ZONING_REASON},
         raw_json=json.dumps(raw),
@@ -4645,41 +4723,66 @@ def lookup(address: str, lat: float | None = None, lng: float | None = None) -> 
 
 The trap: zoning, floors and FAR come from a CITY OF CHICAGO dataset, so they are NULL for
 roughly half of Cook County — every suburb. A suburban parcel with zoning="" would read as
-"unzoned", which is nonsense. Return None with the reason instead."""
+"unzoned", which is nonsense. Return None with the reason instead.
+
+Verified live 2026-07-12 (plan said otherwise on three counts — see docs/implementation-plan.md
+Task 9 correction):
+  - `3723-97qp` ("Assessor - Parcel Addresses") has no `property_address` column; the real
+    column is `prop_address_full`, and it also carries `owner_address_name` — the owner join
+    the plan expected to come from the attrs dataset actually lives HERE.
+  - `pabr-t5kh` ("Assessor - Parcel Universe") is geographic/tax-district reference data
+    (township, census tract, school district...) — it has no year/sqft/stories/owner at all.
+    Building characteristics live in `x54s-btds` ("Assessor - Single and Multi-Family
+    Improvement Characteristics"), keyed by `char_*` columns.
+  - `7cve-jgbp` is a "map" visualization asset (assetType=map) with no queryable SODA rows
+    (`$select=*` returns `{}`). The real underlying tabular resource is `dj47-wfun`; the
+    `zone_class` field name the plan guessed was otherwise correct.
+"""
 import json
+import re
 
 import httpx
 
 from ..cache import cached
 from ..models import Parcel
 
-ADDR = "https://datacatalog.cookcountyil.gov/resource/3723-97qp.json"   # address -> PIN
-ATTRS = "https://datacatalog.cookcountyil.gov/resource/pabr-t5kh.json"  # PIN -> attributes
-CITY_ZONING = "https://data.cityofchicago.org/resource/7cve-jgbp.json"
+ADDR = "https://datacatalog.cookcountyil.gov/resource/3723-97qp.json"   # address -> PIN + owner
+ATTRS = "https://datacatalog.cookcountyil.gov/resource/x54s-btds.json"  # PIN -> characteristics
+CITY_ZONING = "https://data.cityofchicago.org/resource/dj47-wfun.json"
 SUBURB_REASON = ("Zoning is a City of Chicago dataset. This parcel is in suburban Cook "
                  "County, which the city does not zone — the data does not exist, the "
                  "lookup did not fail.")
+_STORY_RE = re.compile(r"(\d+)")
 
 
 def normalize(raw: dict, zoning: str | None = None,
               zoning_reason: str | None = None) -> Parcel:
     def num(k, cast=float):
+        # Cook County serializes every numeric column as a decimal STRING ("1972.0",
+        # "5742.0", never a clean int) — go through float() first or int("1972.0") raises.
         v = raw.get(k)
         try:
-            return cast(v) if v not in (None, "") else None
+            return cast(float(v)) if v not in (None, "") else None
         except (TypeError, ValueError):
             return None
+
+    def floors():
+        # char_type_resd is a descriptive string ("2 Story", "3 Story +"), not a number —
+        # the leading digit IS the story count; this reads it, it does not guess it.
+        m = _STORY_RE.match(raw.get("char_type_resd") or "")
+        return int(m.group(1)) if m else None
 
     missing = {}
     if zoning is None:
         missing["zoning"] = zoning_reason or SUBURB_REASON
     return Parcel(
         parcel_id=f"chi:{raw['pin']}", metro="chi",
-        owner_name=raw.get("owner_name") or raw.get("mailing_name") or None,
+        owner_name=raw.get("owner_address_name") or raw.get("mail_address_name") or None,
         zoning=zoning,
-        year_built=num("year_built", int), lot_sqft=num("land_sf", int),
-        bldg_sqft=num("building_sf", int), floors=num("num_stories", int),
-        units=num("num_units", int),
+        year_built=num("char_yrblt", int), lot_sqft=num("char_land_sf", int),
+        bldg_sqft=num("char_bldg_sf", int), floors=floors(),
+        units=None,   # no clean numeric unit count is published here (char_apts is a word
+                      # like "Six") — None because it genuinely isn't parseable, not a fake.
         use_code=raw.get("class") or None,   # Cook's `class` = building class + land use
         missing_reason=missing, raw_json=json.dumps(raw),
     )
@@ -4703,23 +4806,25 @@ def lookup(address: str, lat: float | None = None, lng: float | None = None) -> 
     street = address.split(",")[0].upper()
 
     def fetch_pin():
-        r = httpx.get(ADDR, params={"$where": f"upper(property_address) like '{street}%'",
-                                    "$limit": 1}, timeout=30.0)
+        r = httpx.get(ADDR, params={"$where": f"upper(prop_address_full) like '{street}%'",
+                                    "$order": "year DESC", "$limit": 1}, timeout=30.0)
         r.raise_for_status()
         return r.json()
 
     hits = cached("cook_addr", "search", {"addr": street}, fetch_pin)
     if not hits:
         return None
-    pin = hits[0].get("pin") or hits[0].get("pin14")
+    addr_row = hits[0]
+    pin = addr_row.get("pin") or addr_row.get("pin10")
 
     def fetch_attrs():
-        r = httpx.get(ATTRS, params={"pin": pin, "$limit": 1}, timeout=30.0)
+        r = httpx.get(ATTRS, params={"pin": pin, "$order": "year DESC", "$limit": 1},
+                       timeout=30.0)
         r.raise_for_status()
         return r.json()
 
     rows = cached("cook_attrs", "pin", {"pin": pin}, fetch_attrs)
-    raw = {**(rows[0] if rows else {}), "pin": pin}
+    raw = {**addr_row, **(rows[0] if rows else {}), "pin": pin}
     z, reason = (_zoning(lat, lng) if lat and lng else (None, SUBURB_REASON))
     return normalize(raw, z, reason)
 ```
@@ -4750,6 +4855,22 @@ Miami zoning code (Wynwood is inside the city — this is the branch that the co
 would have blanked); LA returns `owner: None`; Chicago returns an owner and a city zone
 class. Any `NO MATCH` means an address-search field name moved — fix the provider, not the
 test.
+
+> **Reality (2026-07-12): two of the four seed addresses above are `NO MATCH` — for real,
+> confirmed-by-direct-query reasons, not a fixable field-name bug.** "2618 NW 2nd Ave,
+> Miami, FL" (`seed.py`'s Wynwood demo listing) does not exist anywhere in the Miami-Dade PA
+> database — querying `TRUE_SITE_ADDR LIKE '2618 NW 2%'` returns zero rows, confirmed by
+> direct ArcGIS query, not just this provider's LIKE clause. "1550 N Damen Ave, Chicago, IL"
+> (`seed.py`'s Wicker Park listing) is likewise absent from `3723-97qp`. Both are almost
+> certainly fictional/rounded demo addresses that were never checked against the real
+> parcel databases when `seed.py` was written. The fixtures actually captured use real,
+> nearby, verified addresses instead — **`2801 NW 2 Ave, Miami, FL`** (a real Wynwood folio,
+> still inside the City of Miami branch this step exists to demonstrate — zoning came back
+> `T5-O` from `ZoningMiami21`) and **`2257 N Kedzie Ave, Chicago, IL`** (a real Logan Square
+> PIN with complete owner/characteristics data — zoning `RT-4`). This is a `seed.py`
+> data-quality finding, not a Task 9 defect; `seed.py` is out of this task's file list and
+> was left as-is (`tests/test_smoke.py`'s assertions on the literal seed addresses still pass —
+> see the T9 note added there disabling live parcel lookups for that test).
 
 - [ ] **Step 7: Write the test**
 
@@ -4866,6 +4987,17 @@ cached lookup:
 ```
 
 and pass `parcel` (not `None`) into the template context.
+
+> **Reality (2026-07-12): this makes `/listings/{id}` a live-network route for the first
+> view of any listing whose metro has a real `ParcelProvider` — which, as of this task, is
+> all four.** Two pre-existing `tests/test_smoke.py` cases (`test_search_ui_and_listing_page`,
+> `test_listing_page_links_real_broker_source_url`) hit `/listings/{id}` for a Miami seed
+> listing with no `parcel_id` yet set. Without a guard, landing this step would make BOTH
+> of them fire a real HTTP request at the Miami-Dade PA ArcGIS endpoint on every suite run
+> — exactly what "hermetic, no live network calls" forbids, and a silent regression neither
+> test's assertions would have caught (they don't look at the Parcel panel). Both now
+> `monkeypatch.setattr(registry, "parcel_provider", lambda metro: None)` before calling the
+> route; parcel behavior itself is covered end-to-end by `tests/test_parcel.py`.
 
 - [ ] **Step 9: Run to green and look at the LA listing**
 

@@ -24,8 +24,14 @@ def test_auth_and_settings():
         assert r.status_code == 200 and "ANTHROPIC_API_KEY" in r.text, r.text[:300]
 
 
-def test_search_ui_and_listing_page():
-    from app import db, seed
+def test_search_ui_and_listing_page(monkeypatch):
+    from app import db, registry, seed
+    # T9 wired a LIVE, request-time parcel lookup into /listings/{id} for any metro with a
+    # real ParcelProvider (every metro, as of T9). This test's seed listing has no
+    # parcel_id yet, so without this guard it would fire a real network call at the
+    # Miami-Dade PA ArcGIS endpoint on every run of the suite -- exactly what "hermetic"
+    # forbids. Parcel behavior itself is covered end-to-end by tests/test_parcel.py.
+    monkeypatch.setattr(registry, "parcel_provider", lambda metro: None)
     with TestClient(app, follow_redirects=False) as c:
         seed.seed()
         c.post("/login", data={"password": "test-pw"})
@@ -54,11 +60,12 @@ def test_search_ui_and_listing_page():
         assert "follow the link above" not in r.text
 
 
-def test_listing_page_links_real_broker_source_url():
+def test_listing_page_links_real_broker_source_url(monkeypatch):
     # The spec's "always link sourceUrl" rule, for the one case that matters for a live
     # crawl: a real http(s) source_url. The link must be rendered AND the footnote must
     # point at it -- unlike the seed:// case above, where both are correctly absent.
-    from app import db
+    from app import db, registry
+    monkeypatch.setattr(registry, "parcel_provider", lambda metro: None)  # see T9 note above
     with TestClient(app, follow_redirects=False) as c:
         db.init_db()
         c.post("/login", data={"password": "test-pw"})

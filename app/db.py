@@ -282,6 +282,35 @@ def list_sessions(limit: int = 20) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def save_parcel(p) -> str:
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO parcel (parcel_id, metro, owner_name, zoning, far_built, far_allowed,"
+            " year_built, lot_sqft, bldg_sqft, floors, units, use_code, missing_reason_json, raw_json)"
+            " VALUES (:parcel_id, :metro, :owner_name, :zoning, :far_built, :far_allowed,"
+            " :year_built, :lot_sqft, :bldg_sqft, :floors, :units, :use_code, :missing_reason_json, :raw_json)"
+            " ON CONFLICT(parcel_id) DO UPDATE SET"
+            " owner_name=excluded.owner_name, zoning=excluded.zoning, far_built=excluded.far_built,"
+            " far_allowed=excluded.far_allowed, year_built=excluded.year_built, lot_sqft=excluded.lot_sqft,"
+            " bldg_sqft=excluded.bldg_sqft, floors=excluded.floors, units=excluded.units,"
+            " use_code=excluded.use_code, missing_reason_json=excluded.missing_reason_json,"
+            " raw_json=excluded.raw_json, fetched_at=datetime('now')",
+            {**p.model_dump(exclude={"missing_reason"}),
+             "missing_reason_json": json.dumps(p.missing_reason)},
+        )
+    return p.parcel_id
+
+
+def get_parcel(parcel_id: str) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM parcel WHERE parcel_id = ?", (parcel_id,)).fetchone()
+    if not row:
+        return None
+    d = dict(row)
+    d["missing_reason"] = json.loads(d.pop("missing_reason_json") or "{}")
+    return d
+
+
 def get_session_turns(session_id: str) -> list[dict]:
     """Turns oldest-first, at the API boundary: the stored mustHaves is TEXT in the DB
     and an object on the wire. Returning the raw row would leak `musthaves_json` (a

@@ -29,10 +29,32 @@ def listing_page(request: Request, listing_id: int, _=Depends(require_auth)):
     row = db.get_listing(listing_id)
     if not row:
         return HTMLResponse("<p class='p-6'>No such listing.</p>", status_code=404)
+
+    parcel = None
+    if row.get("parcel_id"):
+        parcel = db.get_parcel(row["parcel_id"])
+    else:
+        from . import registry
+        prov = registry.parcel_provider(row["metro"])
+        if prov:
+            try:
+                p = prov.lookup(row["address"], row.get("lat"), row.get("lng"))
+            except Exception as e:  # noqa: BLE001 — a parcel API being down must not 500 the page
+                import logging
+                logging.getLogger("openlease").warning(
+                    "parcel lookup failed for listing %s (%s): %s", listing_id, type(e).__name__, e)
+                p = None
+            if p:
+                db.save_parcel(p)
+                with db.get_conn() as conn:
+                    conn.execute("UPDATE listing SET parcel_id = ? WHERE id = ?",
+                                 (p.parcel_id, listing_id))
+                parcel = db.get_parcel(p.parcel_id)
+
     return templates.TemplateResponse(
         request, "listing.html",
         {"l": to_api(row), "metro_meta": METROS[row["metro"]],
-         "parcel": None, **spend_ctx()},   # T9 fills `parcel`
+         "parcel": parcel, **spend_ctx()},
     )
 
 

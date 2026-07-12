@@ -8,8 +8,7 @@ import pytest
 
 from app import registry
 from app.config import settings
-from app.models import METRO_KEYS
-from app.providers import geosearch, overpass
+from app.providers import geosearch, overpass, parcel_chicago, parcel_la, parcel_miami, parcel_nyc
 
 
 @pytest.fixture(autouse=True)
@@ -31,14 +30,18 @@ def test_geocoder_nyc_is_the_geosearch_module():
 
 @pytest.mark.parametrize("metro", ["mia", "la", "chi"])
 def test_geocoder_for_non_nyc_metros_delegates_to_parcel_provider(metro):
-    """Task 9 hasn't landed a real parcel_* module yet, so this must be None — not a
-    crash, not a fake geocoder."""
-    assert registry.geocoder(metro) is None
+    """Now that Task 9 has landed a real parcel_* module for every metro, geocoder(metro)
+    delegates to it (its own address search doubles as the geocode) — not a crash, not a
+    fake geocoder, and definitely not None any more."""
+    assert registry.geocoder(metro) is registry.parcel_provider(metro)
+    assert registry.geocoder(metro) is not None
 
 
-@pytest.mark.parametrize("metro", list(METRO_KEYS))
-def test_parcel_provider_is_none_for_every_metro_until_task_9(metro):
-    assert registry.parcel_provider(metro) is None
+@pytest.mark.parametrize("metro,mod", [
+    ("nyc", parcel_nyc), ("mia", parcel_miami), ("la", parcel_la), ("chi", parcel_chicago),
+])
+def test_parcel_provider_is_the_matching_module_for_every_metro(metro, mod):
+    assert registry.parcel_provider(metro) is mod
 
 
 def test_parcel_provider_is_none_for_an_unknown_metro_key():
