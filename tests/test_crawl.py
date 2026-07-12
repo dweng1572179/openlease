@@ -11,6 +11,7 @@ tests/test_extract.py. This file covers the parts of crawl.py that never touch a
 site at all: robots obedience, the crawl-delay floor, the daily cap, the recrawl-dedup
 log, and that the API route is auth-gated and wires to the ladder correctly.
 """
+import logging
 import urllib.robotparser
 from pathlib import Path
 
@@ -158,3 +159,420 @@ def test_api_sources_returns_the_allowlist_when_authed():
         body = r.json()
         assert set(body) == {"nyc", "mia", "la", "chi"}
         assert any(s["key"] == "ripco" for s in body["nyc"])
+
+
+# =============================================================================
+# Fix pass (review findings) — see task-10-report.md for the full RED/GREEN evidence.
+# =============================================================================
+
+class _RawResponse:
+    """Mimics scrapling's REAL `Response` shape (`engines/toolbelt/custom.py`): `.body`
+    is BYTES, never `str`, for BOTH fetch tiers. Every other fake page object in this
+    file (and the ones this bug shipped with) hands `crawl.fetch` a `str` by
+    monkeypatching `crawl.fetch` itself — precisely the shortcut that hid Fix 1. This
+    fakes the underlying `scrapling.fetchers.FetcherSession`/`StealthySession` instead, so
+    `fetch()`'s/`_stealth_fetch()`'s own body-handling code runs against real bytes."""
+
+    def __init__(self, body: bytes, status: int = 200, headers: dict | None = None,
+                 encoding: str = "utf-8"):
+        self.body = body
+        self.status = status
+        self.headers = headers or {}
+        self.encoding = encoding
+
+
+def _fake_fetcher_session(pages: dict, seen: dict | None = None):
+    class _Session:
+        def __init__(self, *a, **kw):
+            if seen is not None:
+                seen["session_kwargs"] = kw
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def get(self, url, **kw):
+            if seen is not None:
+                seen["get_kwargs"] = kw
+            return pages[url]
+
+    return _Session
+
+
+# --- Fix 1: fetch() must decode scrapling's real bytes, not return them verbatim -------
+
+def test_fetch_decodes_real_bytes_to_str(monkeypatch, isolated_db):
+    """`Response.body` is a `@property` returning `self._raw_body`, which IS bytes for the
+    curl_cffi tier — verified against the installed scrapling 0.4.10. The old `fetch()`
+    returned `page.body` straight through, type-hinted `str | None`; the very next thing
+    that touched it (`sitemap_urls`'s `<loc>` regex) is `str`-only and raised
+    `TypeError: cannot use a string pattern on a bytes-like object`."""
+    xml = b'<?xml version="1.0"?><urlset><url><loc>https://x/l/1</loc></url></urlset>'
+    monkeypatch.setattr("scrapling.fetchers.FetcherSession",
+                         _fake_fetcher_session({f"https://{FAKE_DOMAIN}/sitemap.xml": _RawResponse(xml)}))
+    monkeypatch.setattr(settings, "crawl_delay_seconds", 0.0)
+    _seed_robots(monkeypatch, ["User-agent: *", "Disallow:"])
+
+    body = crawl.fetch(f"https://{FAKE_DOMAIN}/sitemap.xml", {"key": "x", "tier": "default"})
+
+    assert isinstance(body, str), "fetch() must decode bytes -> str, not hand back raw bytes"
+    assert body == xml.decode("utf-8")
+
+
+def test_fetch_falls_back_to_utf8_replace_on_a_bad_byte(monkeypatch, isolated_db):
+    """A single malformed byte on a real broker page must degrade that ONE character, not
+    kill the crawl (errors="replace", never a raised UnicodeDecodeError)."""
+    bad = b'<?xml version="1.0"?><urlset><url><loc>https://x/l/\xff1</loc></url></urlset>'
+    monkeypatch.setattr("scrapling.fetchers.FetcherSession",
+                         _fake_fetcher_session({f"https://{FAKE_DOMAIN}/sitemap.xml": _RawResponse(bad)}))
+    monkeypatch.setattr(settings, "crawl_delay_seconds", 0.0)
+    _seed_robots(monkeypatch, ["User-agent: *", "Disallow:"])
+
+    body = crawl.fetch(f"https://{FAKE_DOMAIN}/sitemap.xml", {"key": "x", "tier": "default"})
+
+    assert isinstance(body, str)
+    assert "�" in body
+
+
+def test_ladder_survives_real_bytes_end_to_end_through_jsonld(monkeypatch, isolated_db):
+    """The actual failure path the review named: `fetch()` hands `crawl_source()` bytes,
+    and BOTH `sitemap_urls()`'s <loc> regex and `extract.from_jsonld()`'s script regex
+    are str-only. Feeds the REAL jsonld fixture through as bytes (never a str) at both
+    hops and proves a listing comes out, instead of a TypeError three functions deep."""
+    detail_bytes = (Path(__file__).parent / "fixtures" / "jsonld_listing.html").read_bytes()
+    sitemap_bytes = (b'<?xml version="1.0"?><urlset>'
+                      b'<url><loc>https://test.example.com/listing/1</loc></url></urlset>')
+    pages = {
+        f"https://{FAKE_DOMAIN}/sitemap.xml": _RawResponse(sitemap_bytes),
+        "https://test.example.com/listing/1": _RawResponse(detail_bytes),
+    }
+    monkeypatch.setattr("scrapling.fetchers.FetcherSession", _fake_fetcher_session(pages))
+    monkeypatch.setattr(settings, "crawl_delay_seconds", 0.0)
+    monkeypatch.setattr(crawl, "_geocode", lambda addr, metro: None)   # keep this test hermetic
+    _seed_robots(monkeypatch, ["User-agent: *", "Disallow:"])
+
+    src = {"key": "test", "name": "Test Brokerage", "url": f"https://{FAKE_DOMAIN}",
+           "rung": "jsonld", "tier": "default"}
+    recs = crawl.crawl_source(src, "chi", limit=10)
+
+    assert len(recs) == 1
+    assert recs[0]["address"] == "1550 N Damen Ave, Wicker Park"
+
+
+# --- Fix 3: the default tier must send OUR honest UA, not curl_cffi's auto-impersonated one
+
+def test_default_tier_sends_our_honest_user_agent(monkeypatch, isolated_db):
+    """robots.txt is checked as `settings.crawl_user_agent` (OpenLeaseBot) — the actual
+    fetch must present that SAME identity on the wire. `impersonate="chrome"` may still
+    fake the TLS/JA3 fingerprint (that's the point of it); it must not silently generate
+    a Chrome User-Agent header that contradicts what robots.txt was evaluated under."""
+    seen = {}
+    monkeypatch.setattr(
+        "scrapling.fetchers.FetcherSession",
+        _fake_fetcher_session({f"https://{FAKE_DOMAIN}/page": _RawResponse(b"ok")}, seen),
+    )
+    monkeypatch.setattr(settings, "crawl_delay_seconds", 0.0)
+    _seed_robots(monkeypatch, ["User-agent: *", "Disallow:"])
+
+    crawl.fetch(f"https://{FAKE_DOMAIN}/page", {"key": "x", "tier": "default"})
+
+    headers = seen["session_kwargs"].get("headers") or {}
+    assert headers.get("User-Agent") == settings.crawl_user_agent, (
+        "the default tier must send OUR honest UA — checking robots.txt as OpenLeaseBot "
+        "and then presenting as Chrome on the wire makes the robots check meaningless"
+    )
+
+
+# --- Fix 4: stealth graceful degradation must catch the REAL exception ----------------
+
+def test_stealth_fetch_degrades_gracefully_when_chromium_is_not_installed(monkeypatch, caplog):
+    """The real failure when `scrapling install` hasn't downloaded Chromium is raised from
+    INSIDE StealthySession.start() (via the unguarded `__enter__()` this replaces) as
+    `patchright._impl._errors.Error` ("Executable doesn't exist...") — verified LIVE
+    against the installed package with Chromium genuinely absent (see
+    task-10-report.md for the raw transcript). The OLD code only caught `ImportError`
+    around the (always-succeeding) import, so this exact failure crashed the source
+    instead of degrading. Simulated here (never running the real `scrapling install`)."""
+    monkeypatch.setattr(crawl, "_STEALTH", None)
+
+    class _BrokenSession:
+        def __init__(self, *a, **kw):
+            pass
+
+        def __enter__(self):
+            raise RuntimeError(
+                "BrowserType.launch_persistent_context: Executable doesn't exist at "
+                ".../chrome-mac-arm64/Google Chrome for Testing.app/.../Google Chrome "
+                "for Testing\nPlease run: playwright install"
+            )
+
+    monkeypatch.setattr("scrapling.fetchers.StealthySession", _BrokenSession)
+
+    with caplog.at_level(logging.WARNING, logger="openlease"):
+        result = crawl._stealth_fetch(f"https://{FAKE_DOMAIN}/x", {"key": "ksr", "tier": "stealth"})
+
+    assert result is None, "a broken stealth tier must degrade, never raise, out of fetch()"
+    assert any("scrapling install" in r.message for r in caplog.records), \
+        "the actionable 'run scrapling install' message never fired"
+    assert crawl._STEALTH is None, "a failed __enter__ must not leave a half-initialized session cached"
+
+    # a second attempt (e.g. the next stealth-tier source in the same run) must retry
+    # cleanly rather than reuse — or get permanently wedged on — a broken instance
+    result2 = crawl._stealth_fetch(f"https://{FAKE_DOMAIN}/y", {"key": "ksr", "tier": "stealth"})
+    assert result2 is None
+
+
+# --- Fix 5: exponential (not flat) backoff on 429/503, both tiers ---------------------
+
+def test_backoff_is_exponential_and_compounds_across_consecutive_429s(monkeypatch):
+    monkeypatch.setattr(crawl, "_BACKOFF_STREAK", {})
+    sleeps = []
+    monkeypatch.setattr(crawl.time, "sleep", lambda s: sleeps.append(s))
+    _seed_robots(monkeypatch, ["User-agent: *", "Disallow:"])
+    src = {"key": "x"}
+    url = f"https://{FAKE_DOMAIN}/page"
+
+    crawl._backoff(url, src, 429)
+    crawl._backoff(url, src, 429)
+    crawl._backoff(url, src, 503)
+
+    base = settings.crawl_delay_seconds
+    assert sleeps == [base * 2, base * 4, base * 8], (
+        "each CONSECUTIVE 429/503 must at least double the previous wait — a flat "
+        "multiplier (the old `* 4` every time) never compounds and never actually "
+        "backs off a genuinely hostile domain"
+    )
+
+    # a real 200 resets the streak
+    crawl._backoff(url, src, 200)
+    sleeps.clear()
+    crawl._backoff(url, src, 429)
+    assert sleeps == [base * 2], "a success must reset the streak back to the base delay"
+
+
+def test_stealth_fetch_also_backs_off_on_429(monkeypatch, isolated_db):
+    """The default tier already backed off on 429/503; `_stealth_fetch()` used to just
+    silently return None — landing exactly on `ksr`, the one source sources.yml itself
+    flags as '429-throttles aggressively' and which is `tier: stealth`."""
+    monkeypatch.setattr(crawl, "_STEALTH", None)
+    monkeypatch.setattr(crawl, "_BACKOFF_STREAK", {})
+    sleeps = []
+    monkeypatch.setattr(crawl.time, "sleep", lambda s: sleeps.append(s))
+    _seed_robots(monkeypatch, ["User-agent: *", "Disallow:"])
+
+    class _FakeStealthSession:
+        def __init__(self, *a, **kw):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def fetch(self, url, **kw):
+            return _RawResponse(b"", status=429)
+
+    monkeypatch.setattr("scrapling.fetchers.StealthySession", _FakeStealthSession)
+
+    result = crawl._stealth_fetch(f"https://{FAKE_DOMAIN}/x", {"key": "ksr", "tier": "stealth"})
+
+    assert result is None
+    assert sleeps, "the stealth tier must also back off on 429 — it used to return None with no backoff at all"
+
+
+# --- Fix 6: conditional GETs (ETag / If-Modified-Since), for real ---------------------
+
+def test_conditional_headers_are_sent_after_a_prior_fetch_captured_an_etag(monkeypatch, isolated_db):
+    _seed_robots(monkeypatch, ["User-agent: *", "Disallow:"])
+    monkeypatch.setattr(settings, "crawl_delay_seconds", 0.0)
+    url = f"https://{FAKE_DOMAIN}/page"
+    crawl._log_fetch(url, 200, etag='"abc123"', last_mod="Wed, 21 Oct 2015 07:28:00 GMT")
+
+    seen = {}
+    monkeypatch.setattr(
+        "scrapling.fetchers.FetcherSession",
+        _fake_fetcher_session({url: _RawResponse(b"", status=304)}, seen),
+    )
+
+    result = crawl.fetch(url, {"key": "x", "tier": "default"})
+
+    headers = seen["session_kwargs"].get("headers") or {}
+    assert headers.get("If-None-Match") == '"abc123"'
+    assert headers.get("If-Modified-Since") == "Wed, 21 Oct 2015 07:28:00 GMT"
+    assert result is None, "a 304 has no body to extract from — must return None, not crash"
+
+
+def test_a_fresh_responses_etag_is_captured_for_next_time(monkeypatch, isolated_db):
+    """`crawl_log.etag`/`last_mod` used to be dead columns — always inserted as NULL.
+    This proves a real response's ETag/Last-Modified headers actually get captured."""
+    _seed_robots(monkeypatch, ["User-agent: *", "Disallow:"])
+    monkeypatch.setattr(settings, "crawl_delay_seconds", 0.0)
+    url = f"https://{FAKE_DOMAIN}/page"
+    resp_headers = {"etag": '"xyz"', "last-modified": "Thu, 01 Jan 1970 00:00:00 GMT"}
+    monkeypatch.setattr(
+        "scrapling.fetchers.FetcherSession",
+        _fake_fetcher_session({url: _RawResponse(b"hello", status=200, headers=resp_headers)}),
+    )
+
+    crawl.fetch(url, {"key": "x", "tier": "default"})
+
+    with db.get_conn() as conn:
+        row = conn.execute(
+            "SELECT etag, last_mod FROM crawl_log WHERE url = ? ORDER BY id DESC LIMIT 1", (url,)
+        ).fetchone()
+    assert row["etag"] == '"xyz"'
+    assert row["last_mod"] == "Thu, 01 Jan 1970 00:00:00 GMT"
+
+
+def test_no_prior_fetch_means_no_conditional_headers(monkeypatch, isolated_db):
+    """The very first fetch of a URL has nothing to validate against yet."""
+    _seed_robots(monkeypatch, ["User-agent: *", "Disallow:"])
+    monkeypatch.setattr(settings, "crawl_delay_seconds", 0.0)
+    url = f"https://{FAKE_DOMAIN}/never-seen"
+    seen = {}
+    monkeypatch.setattr(
+        "scrapling.fetchers.FetcherSession",
+        _fake_fetcher_session({url: _RawResponse(b"hi")}, seen),
+    )
+
+    crawl.fetch(url, {"key": "x", "tier": "default"})
+
+    headers = seen["session_kwargs"].get("headers") or {}
+    assert "If-None-Match" not in headers and "If-Modified-Since" not in headers
+
+
+# --- Fix 7: crawl-time geocoding, via each metro's own keyless provider ---------------
+
+def test_maybe_geocode_sets_lat_lng_via_the_metro_provider(monkeypatch):
+    monkeypatch.setattr(crawl, "_geocode", lambda addr, metro: (40.75, -73.98))
+    d = {"address": "123 Main St", "metro": "nyc"}
+
+    crawl._maybe_geocode(d)
+
+    assert d["lat"] == 40.75 and d["lng"] == -73.98
+
+
+def test_maybe_geocode_leaves_lat_lng_absent_never_0_0_on_failure(monkeypatch, caplog):
+    """constraints.md: `None != 0 != "lookup failed"`, and 0,0 is the Gulf of Guinea. A
+    geocode miss must leave lat/lng ABSENT (the listing still saves; it just has no pin
+    yet) — never a fabricated (0, 0)."""
+    monkeypatch.setattr(crawl, "_geocode", lambda addr, metro: None)
+    d = {"address": "nowhere real", "metro": "chi", "source": "test"}
+
+    with caplog.at_level(logging.WARNING, logger="openlease"):
+        crawl._maybe_geocode(d)
+
+    assert "lat" not in d and "lng" not in d
+    assert any("no geocode match" in r.message for r in caplog.records)
+
+
+def test_geocode_dispatches_nyc_to_geosearch(monkeypatch):
+    calls = []
+
+    def _fake_geocode(addr):
+        calls.append(addr)
+        return {"lat": 1.0, "lng": 2.0}
+
+    monkeypatch.setattr("app.providers.geosearch.geocode", _fake_geocode)
+
+    assert crawl._geocode("100 Main St", "nyc") == (1.0, 2.0)
+    assert calls == ["100 Main St"]
+
+
+def test_geocode_dispatches_other_metros_to_their_parcel_provider(monkeypatch):
+    class _FakeProvider:
+        def geocode(self, addr):
+            return {"lat": 3.0, "lng": 4.0}
+
+    monkeypatch.setattr(crawl.registry, "parcel_provider", lambda metro: _FakeProvider())
+
+    assert crawl._geocode("200 Main St", "mia") == (3.0, 4.0)
+
+
+def test_geocode_failure_is_caught_and_returns_none_never_crashes(monkeypatch, caplog):
+    def _boom(addr):
+        raise RuntimeError("mirror is down")
+
+    monkeypatch.setattr("app.providers.geosearch.geocode", _boom)
+
+    with caplog.at_level(logging.WARNING, logger="openlease"):
+        result = crawl._geocode("123 Main St", "nyc")
+
+    assert result is None
+    assert any("geocoding failed" in r.message for r in caplog.records)
+
+
+def test_crawl_source_geocodes_each_extracted_record(monkeypatch, isolated_db):
+    monkeypatch.setattr(settings, "crawl_delay_seconds", 0.0)
+    _seed_robots(monkeypatch, ["User-agent: *", "Disallow:"])
+    detail_html = (Path(__file__).parent / "fixtures" / "jsonld_listing.html").read_text()
+    sitemap_xml = ('<?xml version="1.0"?><urlset>'
+                   '<url><loc>https://test.example.com/listing/1</loc></url></urlset>')
+    monkeypatch.setattr(
+        crawl, "fetch",
+        lambda url, src: sitemap_xml if url.endswith("/sitemap.xml") else detail_html,
+    )
+    monkeypatch.setattr(crawl, "_geocode", lambda addr, metro: (41.9, -87.67))
+
+    src = {"key": "test", "name": "Test Brokerage", "url": f"https://{FAKE_DOMAIN}",
+           "rung": "jsonld", "tier": "default"}
+    recs = crawl.crawl_source(src, "chi", limit=10)
+
+    assert len(recs) == 1
+    assert recs[0]["lat"] == 41.9 and recs[0]["lng"] == -87.67
+
+
+def test_run_paces_overpass_between_listings(monkeypatch, isolated_db):
+    """Task 8 hit 429/504 doing 12 listings back-to-back. run() must sleep between
+    successive score.enrich() calls, never hammer the one shared free mirror."""
+    monkeypatch.setattr(crawl, "SOURCES", {"nyc": [
+        {"key": "x", "name": "X", "url": "https://x.example.com", "rung": "jsonld", "tier": "default"},
+    ]})
+    recs = [
+        {"address": "1 Main St", "metro": "nyc", "source": "x",
+         "source_url": "https://x.example.com/1", "lat": 1.0, "lng": 2.0},
+        {"address": "2 Main St", "metro": "nyc", "source": "x",
+         "source_url": "https://x.example.com/2", "lat": 3.0, "lng": 4.0},
+    ]
+    monkeypatch.setattr(crawl, "crawl_source", lambda src, m, limit: recs)
+    monkeypatch.setattr(crawl, "close", lambda: None)
+    enrich_calls = []
+    monkeypatch.setattr(crawl.score, "enrich", lambda lid: enrich_calls.append(lid))
+    sleeps = []
+    monkeypatch.setattr(crawl.time, "sleep", lambda s: sleeps.append(s))
+
+    stats = crawl.run("nyc", limit=5)
+
+    assert len(enrich_calls) == 2
+    assert sleeps.count(settings.overpass_pace_seconds) == 2
+    assert stats["saved"] == 2 and stats["skipped"] == 0
+
+
+def test_run_overpass_failure_is_a_loud_skip_never_a_crash_never_a_0(monkeypatch, isolated_db, caplog):
+    monkeypatch.setattr(crawl, "SOURCES", {"nyc": [
+        {"key": "x", "name": "X", "url": "https://x.example.com", "rung": "jsonld", "tier": "default"},
+    ]})
+    recs = [{"address": "1 Main St", "metro": "nyc", "source": "x",
+             "source_url": "https://x.example.com/1", "lat": 1.0, "lng": 2.0}]
+    monkeypatch.setattr(crawl, "crawl_source", lambda src, m, limit: recs)
+    monkeypatch.setattr(crawl, "close", lambda: None)
+    monkeypatch.setattr(crawl.time, "sleep", lambda s: None)
+
+    def _boom(lid):
+        from app.providers.overpass import OverpassEmpty
+        raise OverpassEmpty("zero elements")
+
+    monkeypatch.setattr(crawl.score, "enrich", _boom)
+
+    with caplog.at_level(logging.WARNING, logger="openlease"):
+        stats = crawl.run("nyc", limit=5)
+
+    assert stats["saved"] == 1, "the listing must still save even though scoring failed"
+    assert any("scoring failed" in r.message for r in caplog.records)
+    with db.get_conn() as conn:
+        row = conn.execute("SELECT walk_score FROM listing WHERE source_url = ?",
+                            ("https://x.example.com/1",)).fetchone()
+    assert row["walk_score"] is None, "an Overpass failure must leave the score NULL, never 0"

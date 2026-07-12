@@ -28,6 +28,10 @@ from ..models import Parcel
 ADDR = "https://datacatalog.cookcountyil.gov/resource/3723-97qp.json"   # address -> PIN + owner
 ATTRS = "https://datacatalog.cookcountyil.gov/resource/x54s-btds.json"  # PIN -> characteristics
 CITY_ZONING = "https://data.cityofchicago.org/resource/dj47-wfun.json"
+# PIN -> lat/lon (+ census/tax geography). Neither ADDR nor ATTRS above carries
+# coordinates — this is the one Cook County Assessor dataset that does. Verified live
+# 2026-07-12.
+UNIVERSE = "https://datacatalog.cookcountyil.gov/resource/pabr-t5kh.json"
 SUBURB_REASON = ("Zoning is a City of Chicago dataset. This parcel is in suburban Cook "
                  "County, which the city does not zone — the data does not exist, the "
                  "lookup did not fail.")
@@ -106,3 +110,40 @@ def lookup(address: str, lat: float | None = None, lng: float | None = None) -> 
     raw = {**addr_row, **(rows[0] if rows else {}), "pin": pin}
     z, reason = (_zoning(lat, lng) if lat and lng else (None, SUBURB_REASON))
     return normalize(raw, z, reason)
+
+
+def geocode(address: str) -> dict | None:
+    """address -> {"lat","lng"}, for crawl-time geocoding (T10) — no new provider, no new
+    key. Reuses the SAME address -> PIN step `lookup()` above uses (`ADDR`, cached under
+    the identical key, so a prior `lookup()`/`geocode()` call for this address is a cache
+    hit, never a second network round trip), then one more free Socrata call to the
+    Assessor's own 'Parcel Universe' dataset (`pabr-t5kh`) — the one Cook County dataset
+    that actually carries lat/lon per PIN; `ADDR` and `ATTRS` above do not."""
+    street = address.split(",")[0].upper()
+
+    def fetch_pin():
+        r = httpx.get(ADDR, params={"$where": f"upper(prop_address_full) like '{street}%'",
+                                    "$order": "year DESC", "$limit": 1}, timeout=30.0)
+        r.raise_for_status()
+        return r.json()
+
+    hits = cached("cook_addr", "search", {"addr": street}, fetch_pin)
+    if not hits:
+        return None
+    pin = hits[0].get("pin") or hits[0].get("pin10")
+    if not pin:
+        return None
+
+    def fetch_geo():
+        r = httpx.get(UNIVERSE, params={"pin": pin, "$select": "lat,lon",
+                                        "$order": "year DESC", "$limit": 1}, timeout=30.0)
+        r.raise_for_status()
+        return r.json()
+
+    rows = cached("cook_geo", "pin", {"pin": pin}, fetch_geo)
+    if not rows or rows[0].get("lat") is None or rows[0].get("lon") is None:
+        return None
+    try:
+        return {"lat": float(rows[0]["lat"]), "lng": float(rows[0]["lon"])}
+    except (TypeError, ValueError):
+        return None

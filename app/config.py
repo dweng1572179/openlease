@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     crawl_delay_seconds: float = 4.0    # 1 req / 3-5s per domain (spec floor)
     crawl_daily_cap_per_domain: int = 500
     crawl_stealth: bool = True          # ON by default (spec); needs `scrapling install`
+    # Task 8 hit 429/504s from Overpass doing 12 listings back-to-back at ingest. This
+    # paces crawl.run()'s per-listing score.enrich() calls so a real crawl never hammers
+    # the one shared free mirror the way that did.
+    overpass_pace_seconds: float = 2.0
 
     overpass_url: str = "https://overpass-api.de/api/interpreter"
     osrm_url: str = "https://router.project-osrm.org"

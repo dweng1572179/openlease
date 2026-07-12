@@ -9,7 +9,8 @@ os.environ["ANTHROPIC_API_KEY"] = ""      # keyless: the LLM rung must be skippe
 
 import pytest  # noqa: E402
 
-from app import extract  # noqa: E402
+from app import db, extract  # noqa: E402
+from app.config import settings  # noqa: E402
 
 FIX = pathlib.Path(__file__).parent / "fixtures"
 SRC = {"key": "test", "name": "Test Brokerage", "url": "https://example.com"}
@@ -70,3 +71,81 @@ def test_extract_schema_is_all_required_and_non_nullable():
     for name, f in extract.ListingExtract.model_fields.items():
         assert f.is_required(), f"{name} has a default -> optional param -> request HANGS"
         assert "NoneType" not in str(f.annotation), f"{name} is nullable -> union-param 400"
+
+
+# --- Fix 2 (review pass): the HTML+LLM rung routes through cache.cached() + the budget
+# cap. 10 of 16 sources.yml entries are `rung: html` -- before this fix, a crawl over them
+# spent real money with ZERO enforcement of settings.monthly_budget_cents, and re-billed
+# in full on every re-crawl of the same page. Mirrors ai.py's own test_ai.py pattern. ---
+
+def _fake_listing_extract_response(calls):
+    class _FakeParsed:
+        def model_dump(self):
+            return {
+                "address": "123 Main St", "neighborhood": "", "property_type": "",
+                "transaction_type": "", "size_sf": 0, "divisible_min_sf": 0,
+                "divisible_max_sf": 0, "floor": "", "ceiling_height_ft": 0.0,
+                "asking_rent": 0.0, "rent_unit": "", "lease_type": "", "sale_price": 0,
+                "availability_date": "", "broker_name": "", "broker_firm": "",
+                "broker_phone": "", "broker_email": "", "features": [],
+                "our_description": "A space at 123 Main St.",
+            }
+
+    class _FakeResp:
+        parsed_output = _FakeParsed()
+
+    class _FakeMessages:
+        def parse(self, **kwargs):
+            calls.append(1)
+            return _FakeResp()
+
+    class _FakeClient:
+        messages = _FakeMessages()
+
+    return _FakeClient()
+
+
+def test_html_llm_rung_hits_cache_and_never_rebills(monkeypatch, tmp_path):
+    """Never pay twice: an identical repeated page must not re-invoke the paid client."""
+    monkeypatch.setattr(settings, "db_path", str(tmp_path / "extract_cache_hit.db"))
+    db.init_db()
+    monkeypatch.setattr(settings, "anthropic_api_key", "sk-test-key")
+    monkeypatch.setattr(settings, "monthly_budget_cents", 1000)
+    calls = []
+    monkeypatch.setattr(extract.ai, "_client", lambda: _fake_listing_extract_response(calls))
+
+    d1 = extract.from_html_llm("# same page", "https://example.com/x", SRC, "nyc")
+    d2 = extract.from_html_llm("# same page", "https://example.com/x", SRC, "nyc")
+
+    assert len(calls) == 1, "an identical page must be a cache hit, not a re-fetch/re-bill"
+    assert d1 is not None and d1["address"] == "123 Main St"
+    assert d2 is not None and d2["address"] == "123 Main St"
+
+
+def test_html_llm_budget_exceeded_falls_back_loudly_and_never_crashes(monkeypatch, tmp_path, caplog):
+    """A paid call refused by the monthly budget must return None (the crawl just gets no
+    listing from this one page, never a crash) and must log LOUDLY at WARNING naming the
+    budget as the reason -- same as every other fallback in this app."""
+    monkeypatch.setattr(settings, "db_path", str(tmp_path / "extract_budget.db"))
+    db.init_db()
+    monkeypatch.setattr(settings, "anthropic_api_key", "sk-test-key")
+    monkeypatch.setattr(settings, "monthly_budget_cents", 0)   # nothing left this month
+
+    def _must_not_be_called():
+        raise AssertionError("the Anthropic client must not run when there is nothing left to spend")
+    monkeypatch.setattr(extract.ai, "_client", _must_not_be_called)
+
+    with caplog.at_level(logging.WARNING, logger="openlease"):
+        d = extract.from_html_llm("# some page", "https://example.com/x", SRC, "nyc")
+
+    assert d is None
+    assert "budget" in caplog.text.lower()
+
+
+def test_html_llm_still_all_required_no_optional_field_added():
+    """Guards against the easiest way to reintroduce the project's hardest-won bug while
+    wiring this through cache.cached(): ANY optional field on ListingExtract makes
+    messages.parse() HANG (2^N grammar shapes). Wiring in caching must never add one."""
+    for name, f in extract.ListingExtract.model_fields.items():
+        assert f.is_required(), f"{name} gained a default while adding caching -> HANGS"
+        assert "NoneType" not in str(f.annotation), f"{name} became nullable -> union-param 400"

@@ -101,3 +101,30 @@ def lookup(address: str, lat: float | None = None, lng: float | None = None) -> 
     muni = raw.get("TRUE_SITE_CITY") or ""
     z, reason = (_zoning(muni, lat, lng) if lat and lng else (None, NO_BRANCH))
     return normalize(raw, z, reason)
+
+
+def geocode(address: str) -> dict | None:
+    """address -> {"lat","lng"}, for crawl-time geocoding (T10) — no new provider, no new
+    key. Same free county PA layer `lookup()` above queries, but asking for point
+    geometry instead of attributes. `PaGISView` is itself a PARCEL-POINT layer
+    (`geometryType: esriGeometryPoint`, verified live 2026-07-12 — NOT a polygon, unlike
+    LA's), so `outSR=4326` hands back WGS84 lat/lng directly off `geometry.y`/`geometry.x`
+    — no centroid math needed here (contrast parcel_la.geocode)."""
+    street = _ORDINAL.sub(r"\1", address.split(",")[0].upper())
+
+    def fetch():
+        r = httpx.get(PA, params={
+            "where": f"TRUE_SITE_ADDR LIKE '{street}%'",
+            "outFields": "FOLIO", "returnGeometry": "true", "outSR": 4326,
+            "resultRecordCount": 1, "f": "json"}, timeout=30.0)
+        r.raise_for_status()
+        return r.json()
+
+    data = cached("miami_geocode", "address", {"addr": street}, fetch)
+    feats = data.get("features") or []
+    if not feats:
+        return None
+    g = feats[0].get("geometry") or {}
+    if "y" not in g or "x" not in g:
+        return None
+    return {"lat": g["y"], "lng": g["x"]}

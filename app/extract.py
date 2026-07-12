@@ -18,12 +18,29 @@ import re
 
 from pydantic import BaseModel
 
-from . import ai
+from . import ai, cache
 from .config import settings
 
 log = logging.getLogger("openlease")
 
 _TYPES = ("retail", "office", "industrial", "flex", "land")
+
+# Anthropic pricing for the default `llm_model` (claude-opus-4-8): $5/1M input tokens,
+# $25/1M output tokens (i.e. $0.0005c/input-tok, $0.0025c/output-tok) — same rates and
+# same derivation style as ai.py's own `_PARSE_COST_CENTS`/`_REPLY_COST_CENTS`.
+#
+# from_html_llm (messages.parse, max_tokens=2048): system prompt (~150 tok) + the
+# ListingExtract schema definition sent with the request (~350 tok — nearly twice
+# QueryExtract's field count) + up to 20,000 CHARS of page markdown (~5,000 tok at
+# ~4 chars/token) -> ~5,500 input tokens. The parsed-JSON output is normally 200-500
+# tokens (well under the 2048 cap).
+#   ~5500 * 0.0005c + ~500 * 0.0025c = 2.75c + 1.25c =~ 4c -> rounded up to 5c for headroom.
+_HTML_LLM_COST_CENTS = 5
+
+# A WP post TITLE is marketing copy ("280 Broadway – Ground Floor Retail!!"), not
+# structured data — it is only a safe address fallback when it actually LOOKS like a
+# street address (starts with a house number). See from_wp_json's address fallback below.
+_ADDR_LIKE = re.compile(r"^\d+\s+\S")
 
 
 class ListingExtract(BaseModel):
@@ -96,8 +113,16 @@ def from_wp_json(item: dict, src: dict, metro: str) -> dict | None:
         except (TypeError, ValueError):
             return None
 
+    raw_addr = pick("address", "property_address", "street_address")
+    if not raw_addr and _ADDR_LIKE.match(title):
+        # Some WP themes really do put the address in the post title verbatim ("280
+        # Broadway, 2nd Floor"). But a title is marketing copy by default ("280 Broadway
+        # — Ground Floor Retail!!"), so this fallback only fires when the title actually
+        # LOOKS like a street address (starts with a house number) — never a bare
+        # "or title", which would silently write the headline into a FACT field.
+        raw_addr = title
     d = {
-        "address": pick("address", "property_address", "street_address") or title,
+        "address": raw_addr,
         "neighborhood": pick("neighborhood", "submarket"),
         "property_type": (str(pick("property_type", "type") or "").lower() or None),
         "size_sf": num(pick("size", "square_feet", "sf", "total_sf")),
@@ -168,11 +193,19 @@ def from_jsonld(html: str, url: str, src: dict, metro: str) -> dict | None:
 # --- rung 4: HTML + one LLM prompt (no per-site parsers) ----------------------
 
 def from_html_llm(markdown: str, url: str, src: dict, metro: str) -> dict | None:
+    """The one paid rung. Routed through `cache.cached()` — identical repeated pages
+    (a re-crawl within the TTL, or two sources.yml entries hitting the same URL) never
+    re-bill, and a paid call past `settings.monthly_budget_cents` raises `BudgetExceeded`
+    instead of silently spending. Either that or any other parse/API failure degrades to
+    "no listing from this page" — loudly logged, never a crash (ai.py's own pattern)."""
     if not ai.available():
         log.warning("HTML rung needs ANTHROPIC_API_KEY — skipping %s. (The wp-json and "
                     "JSON-LD rungs still work keyless.)", url)
         return None
-    try:
+    page_text = markdown[:20000]
+    req = {"url": url, "markdown": page_text, "model": settings.llm_model}
+
+    def fetch():
         resp = ai._client().messages.parse(
             model=settings.llm_model, max_tokens=2048,
             system=("Extract the ONE commercial space listed on this page into the schema. "
@@ -181,18 +214,35 @@ def from_html_llm(markdown: str, url: str, src: dict, metro: str) -> dict | None
                     "our_description: write ONE original sentence describing the space FROM "
                     "THE FACTS (size, type, floor, location, features). Do NOT copy, quote, "
                     "or paraphrase the page's marketing copy — write your own."),
-            messages=[{"role": "user", "content": markdown[:20000]}],
+            messages=[{"role": "user", "content": page_text}],
             output_format=ListingExtract,
         )
-        return _clean(resp.parsed_output.to_listing(), src, url, metro)
+        return resp.parsed_output.model_dump()
+
+    try:
+        parsed = cache.cached("anthropic", "messages.parse.listing", req, fetch,
+                               cost_cents=_HTML_LLM_COST_CENTS)
+        return _clean(ListingExtract(**parsed).to_listing(), src, url, metro)
+    except cache.BudgetExceeded as e:
+        log.warning(
+            "HTML+LLM rung SKIPPED for %s — monthly paid-spend cap reached (%s); this "
+            "page will not be extracted until MONTHLY_BUDGET_CENTS is raised or the "
+            "month rolls over. (The wp-json and JSON-LD rungs are unaffected — free and "
+            "keyless.)", url, e,
+        )
+        return None
     except Exception as e:  # noqa: BLE001
         log.warning("LLM extraction failed for %s (%s): %s", url, type(e).__name__, e)
         return None
 
 
 def describe(d: dict) -> str:
-    """One sentence, from the facts. Deterministic (keyless); the LLM rewrites it at
-    ingest when a key is present. This exists so we NEVER need the broker's prose."""
+    """One sentence, from the facts. Deterministic and keyless: this IS `our_description`
+    for the wp-json and JSON-LD rungs — key or no key, there is no later LLM rewrite pass
+    over an already-deterministic description. (The HTML+LLM rung is different: there,
+    the LLM writes `our_description` itself, as part of `ListingExtract`, at extraction
+    time — `describe()` is never called for that rung.) This exists so we NEVER need the
+    broker's prose."""
     bits = []
     if d.get("size_sf"):
         bits.append(f"{d['size_sf']:,} SF")

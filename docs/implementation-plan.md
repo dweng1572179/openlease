@@ -5058,6 +5058,14 @@ one.
 > other source for it once the fixed feed URL / detail page no longer carries the metro
 > in its own data. Interface list corrected to match the code below.
 
+> **Correction (Task 10 fix pass — review findings):** the same drift exists one line
+> down and was missed the first time: `crawl.crawl_source(src: dict, limit: int = 100)`
+> above is also missing a parameter. The actual signature (Step 4's code, and the only
+> way `run()` ever calls it) is `crawl_source(src: dict, metro: str, limit: int = 100) ->
+> list[dict]` — for the identical reason as the `extract.from_*` correction above:
+> `metro` has no other source once inside the function. Corrected interface:
+> `crawl.crawl_source(src: dict, metro: str, limit: int = 100) -> list[dict]`.
+
 - [ ] **Step 1: Write `data/sources.yml`**
 
 The allowlist **is** the crawler's scope. A site not in this file is never fetched. Each
@@ -5415,6 +5423,43 @@ def describe(d: dict) -> str:
 > return f"{sentence} at {d['address']}{tail}."
 > ```
 
+> **Correction (Task 10 fix pass — review findings): the HTML+LLM rung bypassed
+> `cache.cached()` and the monthly budget cap entirely.** `from_html_llm` called
+> `ai._client().messages.parse(...)` directly. 10 of 16 `sources.yml` entries are
+> `rung: html` — with a key configured, a crawl over them spent real money with ZERO
+> enforcement of `settings.monthly_budget_cents`, and re-billed in full on every re-crawl
+> of the same page. This is the identical architecture rule Task 4's own review already
+> found and fixed in `ai.py` ("every network call wrapped in `cache.cached()` with a
+> monthly paid-spend cap" — `ai.py`'s docstring calls its two calls "the only paid
+> surfaces in the app," which was no longer true once `extract.py` shipped).
+>
+> Fixed by wrapping the `messages.parse` call in `cache.cached("anthropic",
+> "messages.parse.listing", req, fetch, cost_cents=_HTML_LLM_COST_CENTS)`
+> (`_HTML_LLM_COST_CENTS = 5`, derived the same way `ai.py`'s own `_PARSE_COST_CENTS`/
+> `_REPLY_COST_CENTS` are — see the comment above the constant in `app/extract.py`), and
+> catching `cache.BudgetExceeded` separately from any other parse/API failure so the log
+> names the budget specifically. A budget refusal returns `None` (no listing from that
+> page this run) — it does not, and must not, crash the crawl. `ListingExtract` gained NO
+> optional field in this change — every field stays required (see
+> `test_html_llm_still_all_required_no_optional_field_added` in `tests/test_extract.py`;
+> any optional param on a `messages.parse` schema makes the request HANG).
+>
+> **Two smaller findings from the same review, fixed in the same pass:**
+> - `from_wp_json`'s address fallback used to be `pick(...) or title` — a WP post TITLE
+>   is marketing copy ("280 Broadway – Ground Floor Retail!!"), not structured data, and
+>   that bare `or title` could write the headline straight into the `address` FACT
+>   column. Guarded: the title is only used as a fallback when it actually looks like a
+>   street address (`_ADDR_LIKE = re.compile(r"^\d+\s+\S")` — starts with a house
+>   number). A title that doesn't look address-shaped is simply not used, and the record
+>   is dropped by `_clean()`'s existing `if not d.get("address"): return None` — same
+>   safe failure mode as any other page missing an address.
+> - `describe()`'s docstring claimed "the LLM rewrites it at ingest when a key is
+>   present" — that rewrite pass does not exist anywhere in the codebase (`describe()`
+>   IS `our_description` for the wp-json/JSON-LD rungs, key or no key). Corrected the
+>   docstring rather than build an unrequested rewrite step; the HTML+LLM rung already
+>   writes its own `our_description` directly, as part of `ListingExtract`, and never
+>   calls `describe()` at all — the docstring now says so.
+
 - [ ] **Step 4: Write `crawl.py`**
 
 ```python
@@ -5693,6 +5738,100 @@ def run(metro: str | None = None, limit: int = 100) -> dict:
 >
 > All fixes are in `app/crawl.py`; see `task-10-report.md` for the raw before/after
 > evidence (`css_first` reproduced live against the installed package).
+
+> **Correction (Task 10 fix pass — review findings, six more defects in the code above):**
+>
+> 1. **`fetch()`/`_stealth_fetch()` return `bytes`, type-hinted (and behaving) as `str` —
+>    the crawler broke on first real contact.** scrapling's `Response.body`
+>    (`engines/toolbelt/custom.py`) is a `@property` returning `self._raw_body`, which is
+>    **bytes** for both fetch tiers — verified against the installed 0.4.10 package.
+>    `sitemap_urls()`'s `<loc>` regex and `extract.from_jsonld()`'s script regex are both
+>    `str`-only, so this raised `TypeError: cannot use a string pattern on a bytes-like
+>    object` on the very first successful fetch, for 14 of the 16 configured sources (only
+>    `feed_wp` sources, which parse the body as JSON rather than regexing it, were
+>    unaffected). Fixed with a `_decode()` helper: decodes using the response's own
+>    detected charset (`Response.encoding`, read from the Content-Type header) where
+>    scrapling exposes it, falling back to utf-8 with `errors="replace"` so one bad byte on
+>    a broker page can't kill the crawl. Both `fetch()` and `_stealth_fetch()` return
+>    `_decode(page)` instead of `page.body`.
+> 2. **The default tier's UA never matched what `robots()` checked permissions under.**
+>    `robots()`/`allowed()` evaluate `settings.crawl_user_agent` (OpenLeaseBot); the actual
+>    fetch used `FetcherSession(impersonate="chrome", ...)` with no `headers=` override, so
+>    curl_cffi auto-generated a **Chrome** User-Agent — checking robots.txt as one identity
+>    and then presenting as another on the wire. Fixed: the default tier now passes
+>    `headers={"User-Agent": settings.crawl_user_agent, ...}` explicitly. Verified live
+>    against the installed curl_cffi that an explicit `headers=` User-Agent wins over
+>    `impersonate`'s auto-generated one (the TLS/JA3 fingerprint and `Sec-Ch-Ua` client
+>    hints — the part that actually helps against a bot-wall — stay impersonated; only the
+>    UA header changes). The **stealth tier is deliberately different and untouched**: it
+>    exists specifically to defeat a bot-detection WAF on a public page, so full Chrome
+>    impersonation there is the point, not a bug — see the comment in `_stealth_fetch()`.
+> 3. **Stealth graceful-degradation caught the wrong exception.** `_stealth_fetch()` only
+>    caught `ImportError` around the scrapling import — but `playwright`/`patchright` are
+>    ordinary pip deps (requirements.txt) that always import fine. The REAL failure when
+>    `scrapling install` hasn't downloaded Chromium is raised from inside
+>    `StealthySession.start()`, via the previously-unguarded `_STEALTH.__enter__()` —
+>    verified LIVE against the installed package with Chromium genuinely absent in this
+>    environment:
+>    ```
+>    patchright._impl._errors.Error: BrowserType.launch_persistent_context: Executable
+>    doesn't exist at .../chrome-mac-arm64/Google Chrome for Testing.app/.../Google Chrome
+>    for Testing
+>    ...Please run the following command to download new browsers:
+>        playwright install
+>    ```
+>    Note it's **`patchright`'s** error class, not `playwright`'s as this section originally
+>    guessed — `StealthySession` launches its browser through `patchright.sync_api`, not
+>    vanilla playwright (only imported for type hints). Fixed by wrapping
+>    `candidate.__enter__()` in its own `try`/`except Exception`, logging the actionable
+>    `scrapling install` message, and returning `None` (never reusing a half-initialized
+>    session on the next call — `_STEALTH` is only assigned after a successful `__enter__`).
+> 4. **The default tier's 429/503 backoff was a flat `* 4` multiplier, and the stealth tier
+>    had no backoff at all.** The constraint requires **exponential** backoff; a flat
+>    multiplier never compounds against a domain that keeps 429ing, and `_stealth_fetch()`
+>    (where `ksr` — sources.yml's own "429-throttles aggressively" note — actually lives,
+>    `tier: stealth`) silently returned `None` with no wait at all. Fixed with a shared
+>    `_backoff(url, src, status)`: `base_delay * 2**streak`, streak incrementing per
+>    CONSECUTIVE 429/503 for that domain (capped at 6, ~64x) and resetting to 0 on any other
+>    status. Both tiers call it.
+> 5. **Conditional GETs were never implemented — `crawl_log.etag`/`last_mod` were dead
+>    columns.** They were declared in the schema and accepted as `_log_fetch()` parameters,
+>    but always called with `None`; no `If-None-Match`/`If-Modified-Since` header was ever
+>    sent. Implemented for real: `_conditional_headers(url)` reads the most recent
+>    etag/last_mod captured for that exact URL and sends it back as
+>    `If-None-Match`/`If-Modified-Since` on the next fetch (both tiers — the stealth tier
+>    via `StealthySession.fetch(url, extra_headers=...)`); a `304` response is treated as
+>    "nothing to extract" (returns `None`, same as any other non-200), not a failure. The
+>    response's own `etag`/`last-modified` headers are captured and persisted via
+>    `_log_fetch()` on every fetch, so the columns are no longer always-NULL.
+> 6. **Nothing geocoded — closing the Step 4/Item 3 gap directly above.** That correction
+>    left crawl-time geocoding as a documented scope gap. The reviewer who found it also
+>    found it belongs to Task 10 (no other task claims it, and the product's definition of
+>    done requires a real crawl to produce listings with a map pin and a Walk Score) — so
+>    **Task 10 now owns crawl-time geocoding**, closing that gap rather than leaving it
+>    open. `crawl._geocode(address, metro)` dispatches to the metro's existing free,
+>    keyless provider (NYC: `providers.geosearch.geocode()`, already returns lat/lng
+>    directly; the other three: `registry.parcel_provider(metro).geocode()`, a NEW function
+>    on each of `parcel_miami.py`/`parcel_la.py`/`parcel_chicago.py` — same free
+>    ArcGIS/Socrata endpoints those modules already query for `lookup()`, just asking for
+>    point geometry instead of attributes-only; see `task-10-report.md` for the per-metro
+>    geometry-shape details (point vs. polygon, `returnCentroid` support) verified live
+>    while adding these). No new geocoding dependency,
+>    no new API key. `crawl._maybe_geocode(d)` is called on every extracted record, in
+>    `crawl_source()`, right after extraction; a failure (no match, mirror down, malformed
+>    response) leaves `lat`/`lng` **absent** — never a fabricated `(0, 0)` (constraints.md:
+>    `None != 0 != "lookup failed"`, and `0,0` is the Gulf of Guinea) — and logs loudly.
+>    `run()`'s existing `score.enrich(lid)` call (already gated on `rec.get("lat")`) now
+>    actually fires for real crawled listings; it's now paced with
+>    `time.sleep(settings.overpass_pace_seconds)` between listings (new setting, default
+>    2.0s) so a real crawl doesn't hammer the one shared free Overpass mirror the way
+>    Task 8 did doing 12 listings back-to-back — an Overpass failure there was already (and
+>    remains) a logged skip via `score.enrich`'s existing `except Exception` in `run()`,
+>    never a crash and never a fake `0`.
+>
+> All six fixes are in `app/crawl.py` (fix 6's provider-side half is in the three
+> `parcel_*.py` files); see `task-10-report.md` for the raw RED/GREEN evidence, including
+> the `patchright` exception reproduced live.
 
 - [ ] **Step 5: Write `routes_crawl.py`**
 

@@ -64,3 +64,51 @@ def lookup(address: str, lat: float | None = None, lng: float | None = None) -> 
     data = cached("la_parcel", "query", {"addr": address, "lat": lat, "lng": lng}, fetch)
     feats = data.get("features") or []
     return normalize(feats[0]["attributes"]) if feats else None
+
+
+def _ring_centroid(ring: list[list[float]]) -> tuple[float, float] | None:
+    """Area-weighted polygon centroid (the shoelace formula) — a plain vertex average
+    would skew toward whichever side of an irregular (e.g. L-shaped) parcel happens to
+    have more vertices. Good enough for a map pin; not survey-grade. Returns None for a
+    degenerate (zero-area) ring rather than dividing by zero."""
+    area = cx = cy = 0.0
+    for i in range(len(ring) - 1):
+        x1, y1 = ring[i]
+        x2, y2 = ring[i + 1]
+        cross = x1 * y2 - x2 * y1
+        area += cross
+        cx += (x1 + x2) * cross
+        cy += (y1 + y2) * cross
+    area /= 2
+    if not area:
+        return None
+    return (cy / (6 * area), cx / (6 * area))   # (lat, lng) — outSR=4326 means x=lng, y=lat
+
+
+def geocode(address: str) -> dict | None:
+    """address -> {"lat","lng"}, for crawl-time geocoding (T10) — no new provider, no new
+    key. Same free county parcel layer `lookup()` above queries, but with polygon
+    geometry requested (`outSR=4326`) so the parcel's own centroid stands in for a
+    street-address geocode. LA parcels are POLYGONS (`esriGeometryPolygon`, verified live
+    2026-07-12 — unlike Miami's point layer), and this server does not support
+    `returnCentroid` (verified live: the parameter is silently ignored, no `centroid` key
+    comes back), so the centroid is computed here from the first (exterior) ring."""
+    street = address.split(",")[0].upper()
+
+    def fetch():
+        r = httpx.get(MAPSERVER, params={
+            "where": f"SitusFullAddress LIKE '{street}%'", "outFields": "AIN",
+            "returnGeometry": "true", "outSR": 4326, "resultRecordCount": 1,
+            "f": "json"}, timeout=30.0)
+        r.raise_for_status()
+        return r.json()
+
+    data = cached("la_geocode", "address", {"addr": street}, fetch)
+    feats = data.get("features") or []
+    if not feats:
+        return None
+    rings = (feats[0].get("geometry") or {}).get("rings") or []
+    if not rings or len(rings[0]) < 3:
+        return None
+    centroid = _ring_centroid(rings[0])
+    return {"lat": centroid[0], "lng": centroid[1]} if centroid else None
