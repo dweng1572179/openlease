@@ -60,10 +60,17 @@ def test_bay_ridge_scores_high_but_below_midtown():
 
 def test_industrial_district_scores_low():
     """The control: if a Vernon industrial block also scored ~100, the score would be
-    measuring nothing."""
+    measuring nothing. This is the ONLY test that proves the score discriminates, so its
+    bound has to be tight enough to fail a broken score. Vernon really scores 18 against
+    the committed fixture; `< 75` would wave through a score that had gone uniformly high
+    (a 74 here means the metric is nearly dead) and the guard would be worthless."""
     f = _fx("vernon_la")
     s, _ = score.walk_score(f["lat"], f["lng"], f["pois"])
-    assert s < 75, s
+    assert s < 40, s
+    # ...and it must be a real, discriminating gap below the dense anchor, not a hair.
+    esb = _fx("esb")
+    esb_s, _ = score.walk_score(esb["lat"], esb["lng"], esb["pois"])
+    assert esb_s - s > 50, (esb_s, s)
 
 
 def test_empty_pois_is_never_a_zero_score():
