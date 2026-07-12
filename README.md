@@ -23,13 +23,28 @@ monthly budget you set, and every response is cached — you never pay for the s
 **Nothing is required.** A rules-based parser handles search with no Anthropic key; it
 understands far less, and it says so, loudly, rather than quietly dropping half your query.
 
-One honest caveat on that keyless table: the crawler will fetch a broker page with no key
-at all, but most broker sites don't publish **size** or **asking rent** as structured data —
-those two fields usually live only in the page's prose, and reading prose needs the LLM
-rung (`ANTHROPIC_API_KEY`). Structured feeds (a site's own WordPress REST API, a CSV you
-already licensed, or a government feed) give you address, neighborhood, property type,
-broker, and a link back to the source with no key. Size and rent, from an ordinary crawled
-page, generally don't show up until you bring a key.
+### The honest caveat on that table
+
+The crawler runs with no key, but what it *gets* depends on what the site publishes.
+
+A site with a **structured feed** (its own WordPress REST API) hands over address,
+neighborhood, property type, broker and a link back — no key, no scraping. A site that
+publishes its listings only as **prose on an HTML page** gives you nothing until you bring
+an `ANTHROPIC_API_KEY`, because reading prose is what the LLM rung is for. **Size and asking
+rent are almost always in the prose.** So keyless you get leads with addresses and map pins;
+you generally do not get rents.
+
+Measured, on the shipped allowlist (`app/data/sources.yml`), with zero keys:
+
+| Metro | Keyless crawl | Why |
+|---|---|---|
+| **New York** | ✅ RIPCO (833 listings) + Metro Manhattan (498) | both publish a WordPress feed |
+| **Miami** | ✅ Terranova, Metro 1 | WordPress feed / JSON-LD |
+| **Los Angeles** | ❌ nothing | all three sources are HTML-only — they need the LLM rung |
+| **Chicago** | ❌ nothing | same |
+
+That is a property of those brokers' websites, not of the crawler. NYC additionally has the
+storefront-vacancy feed below, which needs no key and no crawling at all.
 
 ## Run it
 
@@ -81,6 +96,18 @@ Three supplies, in order of how much you should trust them:
    `POST /api/import/csv`.
 3. **The crawler** — `POST /api/crawl`, over the allowlist in `app/data/sources.yml`.
 
+Ingest is two steps, on purpose:
+
+```
+POST /api/crawl      # fetch supply — fast
+POST /api/enrich     # Walk/Transit score it — slow, paced
+```
+
+Scoring calls OpenStreetMap's free Overpass mirrors, which rate-limit hard. Doing it inside
+the crawl loop made supply hostage to POI lookups: a measured run spent 30 minutes backing
+off and never got past New York. Split apart, the same crawl finishes in nine. Both are
+still ingest-time — Overpass is never called while you're searching.
+
 ### What the crawler will and won't do
 
 It obeys `robots.txt` (including `Crawl-delay`), asks for it under its own honest identity,
@@ -99,6 +126,15 @@ you read here are written from the facts by OpenLease) and it does **not** downl
 re-host their photos (they're hot-linked from the broker's own server, and the listing page
 links you to their page). This is the same fact-pattern that CoStar successfully argued
 against CREXi.
+
+And it would rather tell you nothing than tell you something wrong. A broker's feed is often
+national: RIPCO's returns properties in Cleburne, Texas and Panama City, Florida alongside
+Manhattan. A geocoder scoped to one metro *does not decline* — ask NYC's for a street in
+Stony Brook and it will confidently hand you a different street in Brooklyn, with the same
+confidence score it reports for a correct hit. So the crawler reads the state off the
+listing's own URL before it geocodes anything, drops what's out of market, and checks that
+the street it asked for is the street it got back. A listing it can't place keeps its address
+and its link and simply has **no pin** — rather than a plausible pin in the wrong city.
 
 This is local-and-personal software. Don't republish what it collects.
 
