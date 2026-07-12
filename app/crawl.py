@@ -16,6 +16,7 @@ On 8GB: exactly ONE long-lived stealth browser session per run. Never call the o
 StealthyFetcher.fetch() in a loop — it launches and kills a Chromium per call.
 """
 import logging
+import re
 import time
 import urllib.robotparser
 from pathlib import Path
@@ -26,6 +27,7 @@ import yaml
 from . import extract, registry, score
 from .config import settings
 from .db import get_conn, save_listing
+from .models import METROS
 
 log = logging.getLogger("openlease")
 
@@ -310,13 +312,44 @@ def close() -> None:
         _STEALTH = None
 
 
+_LOC = re.compile(r"<loc>\s*([^<\s]+)\s*</loc>")
+# A URL that smells like inventory. Deliberately broader than "listing|propert": real sites
+# use /space/, /availability/, /building/, /asset/. Generic — never a per-site pattern.
+INVENTORY_RE = re.compile(r"propert|listing|space|availab|building|asset", re.I)
+MAX_SITEMAP_CHILDREN = 12
+
+
 def sitemap_urls(base: str, src: dict) -> list[str]:
-    """Rung 2. <lastmod> is what drives a recrawl; absent one, the URL is crawled once."""
-    import re
-    body = fetch(urljoin(base, "/sitemap.xml"), src)
+    """Rung 2. <lastmod> is what drives a recrawl; absent one, the URL is crawled once.
+
+    Follows a <sitemapindex> into its children. Most of these sites don't publish a flat
+    /sitemap.xml — they publish an INDEX whose <loc>s are themselves .xml sitemaps, and
+    reading only the top level returned a handful of section URLs and zero listings. That
+    is why LA and Chicago looked empty: rexfordindustrial.com has 793 inventory URLs, all
+    of them one level down. Also tries /sitemap_index.xml, which is what Yoast (on most of
+    these WordPress sites) actually generates.
+    """
+    body = None
+    for path in ("/sitemap.xml", "/sitemap_index.xml"):
+        body = fetch(urljoin(base, path), src)
+        if body:
+            break
     if not body:
         return []
-    return re.findall(r"<loc>\s*([^<\s]+)\s*</loc>", body)
+
+    locs = _LOC.findall(body)
+    children = [u for u in locs if u.endswith(".xml")]
+    if children:
+        out = [u for u in locs if not u.endswith(".xml")]
+        for child in children[:MAX_SITEMAP_CHILDREN]:
+            sub = fetch(child, src)
+            if sub:
+                out += [u for u in _LOC.findall(sub) if not u.endswith(".xml")]
+        if len(children) > MAX_SITEMAP_CHILDREN:
+            log.info("%s: sitemap index has %d children, read the first %d",
+                     src.get("key"), len(children), MAX_SITEMAP_CHILDREN)
+        return out
+    return locs
 
 
 def _to_markdown(body: str) -> str:
@@ -354,6 +387,15 @@ def _geocode(address: str, metro: str) -> tuple[float, float] | None:
         return None
 
 
+def metro_for(lat: float, lng: float) -> str | None:
+    """Which of our four metros actually contains this point? None = none of them."""
+    for key, meta in METROS.items():
+        min_lat, min_lng, max_lat, max_lng = meta["bbox"]
+        if min_lat <= lat <= max_lat and min_lng <= lng <= max_lng:
+            return key
+    return None
+
+
 def _maybe_geocode(d: dict) -> None:
     """None of the three extraction rungs (`from_wp_json`/`from_jsonld`/`from_html_llm`)
     resolves an address to lat/lng on its own — this is Task 10's own crawl-time geocode
@@ -369,6 +411,35 @@ def _maybe_geocode(d: dict) -> None:
     else:
         log.warning("no geocode match for %r in %s (%s) — saving without a map pin",
                     addr, d["metro"], d.get("source"))
+
+
+def _place(d: dict, configured_metro: str) -> bool:
+    """Decide which metro a listing is ACTUALLY in, from its coordinates. Returns False if
+    it isn't in any of our four — the caller drops it.
+
+    A source's position in sources.yml is a hint about where to LOOK, not a fact about
+    what it returns. RIPCO's wp-json feed is NATIONAL: crawling it under `nyc` stamped
+    listings in Tampa, Cleburne TX, and central NJ as New York. And because `ripco` and
+    `ripco_mia` are the same site with the same source_urls, the Miami pass then upserted
+    over the New York rows and relabelled them `mia` — one feed, two config entries, and
+    the metro column ended up meaning nothing.
+
+    The geocoder already told us where the building is. Believe it over the config. A
+    listing we cannot place stays unplaced — we do not guess a metro for it.
+    """
+    lat, lng = d.get("lat"), d.get("lng")
+    if lat is None or lng is None:
+        return True                      # ungeocoded: keep the configured metro, no pin
+    actual = metro_for(lat, lng)
+    if actual is None:
+        log.info("%s: %r is outside all four metros (%.4f, %.4f) — dropping",
+                 d.get("source"), d.get("address"), lat, lng)
+        return False
+    if actual != configured_metro:
+        log.info("%s: %r is in %s, not the configured %s — filing it under %s",
+                 d.get("source"), d.get("address"), actual, configured_metro, actual)
+    d["metro"] = actual
+    return True
 
 
 def crawl_source(src: dict, metro: str, limit: int = 100) -> list[dict]:
@@ -387,12 +458,13 @@ def crawl_source(src: dict, metro: str, limit: int = 100) -> list[dict]:
                 d = extract.from_wp_json(item, src, metro)
                 if d:
                     _maybe_geocode(d)
-                    out.append(d)
+                    if _place(d, metro):
+                        out.append(d)
             if out:
                 return out                      # the rung worked — do not descend
             log.info("%s: wp-json returned nothing usable, descending the ladder", src["key"])
 
-    urls = [u for u in sitemap_urls(src["url"], src) if "listing" in u or "propert" in u]
+    urls = [u for u in sitemap_urls(src["url"], src) if INVENTORY_RE.search(u)]
     urls = urls[:limit] or [src["url"]]
 
     for url in urls:
@@ -410,7 +482,8 @@ def crawl_source(src: dict, metro: str, limit: int = 100) -> list[dict]:
             d = extract.from_html_llm(md, url, src, metro)
         if d:
             _maybe_geocode(d)
-            out.append(d)
+            if _place(d, metro):
+                out.append(d)
     return out
 
 

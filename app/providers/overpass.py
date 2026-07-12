@@ -14,12 +14,20 @@ with httpx's default `python-httpx/x.y.z` User-Agent — it wants a request that
 itself. We send `settings.crawl_user_agent` (the same polite identifier the crawler uses)
 on every call.
 """
+import time
+import logging
 import httpx
 
 from ..cache import cached
 from ..config import settings
 
 RADIUS_M = 2414  # Walk Score's outer bound (1.5 miles)
+
+log = logging.getLogger("openlease")
+
+RETRY_STATUS = (406, 429, 504)   # public-mirror soft rate-limiting, not a bad request
+RETRIES = 4
+BACKOFF_BASE_S = 8.0
 
 ALLOWED_HOSTS = ("overpass-api.de", "overpass.kumi.systems")
 
@@ -70,12 +78,30 @@ def pois(lat: float, lng: float) -> list[dict]:
     q = _query(lat, lng)
 
     def fetch():
-        r = httpx.post(
-            settings.overpass_url, data={"data": q},
-            headers={"User-Agent": settings.crawl_user_agent}, timeout=150.0,
-        )
-        r.raise_for_status()
-        return r.json()
+        # 406/429/504 from a public Overpass mirror is soft rate-limiting, not a bad
+        # request — under a bulk ingest it hit 9 of 12 listings on the first pass and every
+        # one of them succeeded on a retry. Back off and try again rather than throwing the
+        # listing away (an ingest that silently drops 75% of its POIs would leave a corpus
+        # of plausible-looking, uniformly-low Walk Scores). Accept is explicit: some mirrors
+        # 406 a POST that doesn't state what it wants back.
+        last = None
+        for attempt in range(RETRIES):
+            r = httpx.post(
+                settings.overpass_url, data={"data": q},
+                headers={"User-Agent": settings.crawl_user_agent,
+                         "Accept": "application/json"},
+                timeout=150.0,
+            )
+            if r.status_code in RETRY_STATUS:
+                wait = BACKOFF_BASE_S * (2 ** attempt)
+                log.warning("Overpass %s (attempt %d/%d) — backing off %.0fs",
+                            r.status_code, attempt + 1, RETRIES, wait)
+                last = r
+                time.sleep(wait)
+                continue
+            r.raise_for_status()
+            return r.json()
+        last.raise_for_status()   # out of retries: surface the real error, never a fake 0
 
     data = cached("overpass", "interpreter", {"lat": round(lat, 5), "lng": round(lng, 5)}, fetch)
     els = data.get("elements", [])

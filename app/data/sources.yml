@@ -16,6 +16,13 @@ nyc:
     rung: feed_wp        # 833 listings, structured, no auth, no scraping at all
     tier: default
     robots: allows /wp-json
+    # This feed is NATIONAL, not New York: it returns Tampa, Cleburne TX, and central NJ
+    # alongside Manhattan. It is listed here once, under nyc, purely because the crawler
+    # has to start somewhere — crawl.py geocodes every listing and files it under the
+    # metro whose bbox actually contains it (`_place`), dropping anything outside all
+    # four. It used to appear a SECOND time under mia (`ripco_mia`, same site, same
+    # source_urls); since save_listing upserts on source_url, that second pass simply
+    # overwrote the first and relabelled every NYC row `mia`. One feed, one entry.
   - key: rtl
     name: RTL Real Estate
     url: https://www.rtl-re.com/listings
@@ -24,8 +31,10 @@ nyc:
   - key: metro_manhattan
     name: Metro Manhattan Office Space
     url: https://www.metro-manhattan.com
-    rung: jsonld
-    tier: default
+    feed: https://www.metro-manhattan.com/wp-json/wp/v2/listings?per_page=100
+    rung: feed_wp        # 498 listings. Was `jsonld` — but the site's only JSON-LD is
+    tier: default        # Yoast SEO boilerplate, so it was falling all the way to the LLM
+                         # rung for data a public WP feed hands over for free.
   - key: ksr
     name: KSR NY
     url: https://www.ksrny.com
@@ -52,14 +61,12 @@ mia:
   - key: terranova
     name: Terranova Corporation
     url: https://www.terranovacorp.com
-    rung: html
+    feed: https://www.terranovacorp.com/wp-json/wp/v2/property?per_page=100
+    rung: feed_wp        # 16 listings via a public WP feed. Was `html` (the LLM rung).
     tier: default
-  - key: ripco_mia
-    name: RIPCO (Miami)
-    url: https://www.ripcony.com
-    feed: https://www.ripcony.com/wp-json/wp/v2/property-listings?per_page=100&locations=Miami
-    rung: feed_wp
-    tier: default
+  # (RIPCO's Miami inventory arrives via the single `ripco` entry under nyc — see the note
+  # there. Its `?locations=Miami` filter is not honored by the WP REST API anyway: the feed
+  # returns the same national 833 either way.)
 
 la:
   - key: avison_la

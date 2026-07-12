@@ -648,3 +648,62 @@ def test_robots_txt_is_requested_under_our_own_user_agent(monkeypatch):
     assert seen["url"] == "https://robots.example.com/robots.txt"
     assert seen["ua"] == settings.crawl_user_agent
     assert "OpenLeaseBot" in seen["ua"]
+
+
+# --- a listing's metro comes from WHERE IT IS, not from which config block found it ------
+
+def test_a_national_feed_does_not_stamp_every_listing_with_the_configured_metro():
+    """RIPCO's wp-json feed is national. Crawled under `nyc`, it handed us buildings in
+    Tampa and Cleburne, Texas — and we filed them as New York. `_place` believes the
+    geocoder over sources.yml: a listing goes in the metro whose bbox actually contains
+    it, and a listing outside all four is dropped rather than guessed at."""
+    tampa = {"address": "1704 S Dale Mabry Hwy", "lat": 27.9403, "lng": -82.5065,
+             "metro": "nyc", "source": "ripco"}
+    assert crawl._place(tampa, "nyc") is False          # not one of our four -> dropped
+
+    wynwood = {"address": "2618 NW 2nd Ave", "lat": 25.8010, "lng": -80.1990,
+               "metro": "nyc", "source": "ripco"}       # found under the nyc entry...
+    assert crawl._place(wynwood, "nyc") is True
+    assert wynwood["metro"] == "mia"                    # ...but it is plainly in Miami
+
+    midtown = {"address": "350 5th Ave", "lat": 40.7484, "lng": -73.9857,
+               "metro": "nyc", "source": "ripco"}
+    assert crawl._place(midtown, "nyc") is True and midtown["metro"] == "nyc"
+
+
+def test_an_ungeocoded_listing_keeps_its_configured_metro_and_is_not_dropped():
+    """No coordinates is not the same as 'somewhere else'. The listing still has an
+    address, a source_url and our description — it just has no map pin yet."""
+    d = {"address": "somewhere unresolvable", "metro": "chi", "source": "baum"}
+    assert crawl._place(d, "chi") is True
+    assert d["metro"] == "chi"
+
+
+def test_sitemap_follows_an_index_into_its_children(monkeypatch):
+    """Most of these sites publish a sitemap INDEX, not a flat sitemap. Reading only the
+    top level returned a handful of section URLs and zero listings — which is exactly why
+    LA and Chicago looked empty (rexfordindustrial.com has 793 inventory URLs, all one
+    level down)."""
+    index = ('<sitemapindex><sitemap><loc>https://x.test/props-1.xml</loc></sitemap>'
+             '<sitemap><loc>https://x.test/posts.xml</loc></sitemap></sitemapindex>')
+    children = {
+        "https://x.test/props-1.xml":
+            "<urlset><url><loc>https://x.test/properties/a</loc></url>"
+            "<url><loc>https://x.test/properties/b</loc></url></urlset>",
+        "https://x.test/posts.xml":
+            "<urlset><url><loc>https://x.test/blog/hello</loc></url></urlset>",
+    }
+
+    def _fake_fetch(url, src):
+        if url.endswith("/sitemap.xml"):
+            return index
+        return children.get(url)
+
+    monkeypatch.setattr(crawl, "fetch", _fake_fetch)
+    urls = crawl.sitemap_urls("https://x.test", {"key": "x"})
+    assert "https://x.test/properties/a" in urls
+    assert "https://x.test/properties/b" in urls
+    assert not any(u.endswith(".xml") for u in urls)     # children are followed, not returned
+    # ...and the inventory filter keeps the properties and drops the blog post
+    inv = [u for u in urls if crawl.INVENTORY_RE.search(u)]
+    assert sorted(inv) == ["https://x.test/properties/a", "https://x.test/properties/b"]

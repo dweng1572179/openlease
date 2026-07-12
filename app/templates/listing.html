@@ -102,13 +102,13 @@
       <div class="mb-3 flex flex-wrap items-center gap-2 text-xs">
         <span class="text-slate-400">Add to portfolio:</span>
         {% for p in portfolios %}
-        <span class="inline-flex items-center gap-1">
-          <button hx-post="/portfolios/{{ p.id }}/add" hx-vals='{"listing_id": {{ l.id }}}'
-                  hx-swap="none" onclick="this.nextElementSibling.classList.remove('hidden')"
-                  class="rounded border px-2 py-1 text-slate-600 hover:border-sky-400">
-            + {{ p.name }}</button>
-          <span class="hidden text-sky-600">added</span>
-        </span>
+        {# hx-swap="outerHTML" replaces the button with what the SERVER says happened.
+           The old version swapped nothing and revealed a hidden "added" label from an
+           onclick — which fired on click, so a failed add still told you it worked. #}
+        <button hx-post="/portfolios/{{ p.id }}/add" hx-vals='{"listing_id": {{ l.id }}}'
+                hx-swap="outerHTML"
+                class="rounded border px-2 py-1 text-slate-600 hover:border-sky-400">
+          + {{ p.name }}</button>
         {% endfor %}
       </div>
       {% else %}

@@ -144,7 +144,9 @@ def test_portfolio_add_and_scoped_export():
         c.post("/portfolios", data={"name": "Wynwood shortlist"})
         pid = db.list_portfolios()[0]["id"]
         r = c.post(f"/portfolios/{pid}/add", data={"listing_id": lid})
-        assert r.status_code == 200 and r.json() == {"ok": True}
+        # the route returns the button's server-rendered replacement, not JSON: the UI
+        # must never claim a success the server didn't actually perform
+        assert r.status_code == 200 and "added" in r.text
 
         items = db.portfolio_items(pid)
         assert len(items) == 1 and items[0]["id"] == lid
@@ -202,6 +204,39 @@ def test_listing_page_shows_highlights_gate_and_saved_state(monkeypatch):
         assert "Save</button>" in r.text                     # not yet saved
         assert "Saved</button>" not in r.text
 
+        # ...and the gate is actually SHOWN. The keyless promise is that an LLM feature
+        # degrades HONESTLY and LOUDLY — not that it silently renders nothing. Without
+        # this the `{% elif not ai_available %}` branch could vanish and every assertion
+        # above would still pass, leaving the user staring at an empty panel with no idea
+        # a key would fill it.
+        assert "ANTHROPIC_API_KEY" in r.text, "the keyless gate must say what's missing"
+        assert "/settings" in r.text, "...and where to fix it"
+
         c.post(f"/listings/{lid}/save")
         r = c.get(f"/listings/{lid}")
         assert "Saved</button>" in r.text
+
+
+def test_a_failed_portfolio_add_says_so_instead_of_claiming_success(monkeypatch):
+    """The button used to reveal a hidden 'added' label from an onclick that fired the
+    moment you clicked it — so a failed add still told the user it had worked. The server
+    now renders the outcome and HTMX swaps it in, so the UI cannot claim a success it
+    didn't get."""
+    from app import db, registry, seed
+    monkeypatch.setattr(registry, "parcel_provider", lambda metro: None)
+    with TestClient(app, follow_redirects=False) as c:
+        seed.seed()
+        c.post("/login", data={"password": "test-pw"})
+        with db.get_conn() as conn:
+            lid = conn.execute(
+                "SELECT id FROM listing WHERE source_url='seed://nyc/1'").fetchone()["id"]
+
+        pid = db.create_portfolio("Acme Corp")
+        ok = c.post(f"/portfolios/{pid}/add", data={"listing_id": lid})
+        assert ok.status_code == 200 and "added" in ok.text
+
+        # a portfolio that does not exist -> FK violation -> must NOT report success
+        bad = c.post("/portfolios/999999/add", data={"listing_id": lid})
+        assert bad.status_code == 500, bad.text
+        assert "added" not in bad.text
+        assert "couldn't add" in bad.text

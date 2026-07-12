@@ -12,6 +12,7 @@ httpx's default `python-httpx/x.y.z` User-Agent. Every request must identify its
 
 Run: `python -m pytest tests/test_overpass.py -v` from openlease/.
 """
+import httpx
 import pytest
 
 from app import db
@@ -26,11 +27,13 @@ def isolated_db(monkeypatch, tmp_path):
 
 
 class _FakeResponse:
-    def __init__(self, payload):
+    def __init__(self, payload, status_code=200):
         self._payload = payload
+        self.status_code = status_code
 
     def raise_for_status(self):
-        pass
+        if self.status_code >= 400:
+            raise httpx.HTTPStatusError(f"{self.status_code}", request=None, response=None)
 
     def json(self):
         return self._payload
@@ -119,3 +122,36 @@ def test_normalize_handles_nodes_ways_and_bus_stops(isolated_db, monkeypatch):
     # the parking node (unmatched tags) and the coordinate-less way both vanish silently --
     # exactly two categorized POIs plus the one bus stop, nothing else
     assert len(result) == 3
+
+
+def test_a_406_is_retried_not_treated_as_a_bad_request(monkeypatch, isolated_db):
+    """A public Overpass mirror answers 406/429/504 when it is soft rate-limiting, not
+    because the request is wrong. A bulk ingest hit this on 9 of 12 listings and every one
+    succeeded on a retry — so giving up on the first 406 would have left a corpus of
+    plausible-looking, uniformly-low Walk Scores. Retry with backoff; never a fake 0."""
+    monkeypatch.setattr(settings, "overpass_url", "https://overpass-api.de/api/interpreter")
+    monkeypatch.setattr(overpass.time, "sleep", lambda s: None)      # don't actually wait
+    calls = []
+    good = {"elements": [{"type": "node", "lat": 40.75, "lon": -73.98,
+                          "tags": {"amenity": "cafe", "name": "Cafe"}}]}
+
+    def _post(url, data=None, headers=None, timeout=None):
+        calls.append(headers)
+        return _FakeResponse({}, 406) if len(calls) < 3 else _FakeResponse(good, 200)
+
+    monkeypatch.setattr("httpx.post", _post)
+    got = overpass.pois(40.7484, -73.9857)
+    assert len(calls) == 3, "two 406s must be retried, not surrendered to"
+    assert got and got[0]["category"] == "coffee"
+    # and we say who we are, and what we want back (a bare POST gets 406 from some mirrors)
+    assert "OpenLeaseBot" in calls[0]["User-Agent"]
+    assert calls[0]["Accept"] == "application/json"
+
+
+def test_retries_run_out_and_the_error_surfaces(monkeypatch, isolated_db):
+    """Out of retries is a FAILURE, and it must be raised. Never a score of 0."""
+    monkeypatch.setattr(settings, "overpass_url", "https://overpass-api.de/api/interpreter")
+    monkeypatch.setattr(overpass.time, "sleep", lambda s: None)
+    monkeypatch.setattr("httpx.post", lambda *a, **kw: _FakeResponse({}, 429))
+    with pytest.raises(httpx.HTTPStatusError):
+        overpass.pois(40.7484, -73.9857)
