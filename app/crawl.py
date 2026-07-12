@@ -316,7 +316,16 @@ _LOC = re.compile(r"<loc>\s*([^<\s]+)\s*</loc>")
 # A URL that smells like inventory. Deliberately broader than "listing|propert": real sites
 # use /space/, /availability/, /building/, /asset/. Generic — never a per-site pattern.
 INVENTORY_RE = re.compile(r"propert|listing|space|availab|building|asset", re.I)
+# ...but not the brochure. rtl-re.com's sitemap lists a PDF next to every listing, under the
+# same /properties/ path, so the inventory pattern matched them and the crawler spent a
+# 4-second politeness delay each on 25 PDFs it could never extract a thing from. We only
+# ever want the HTML page.
+NOT_A_PAGE_RE = re.compile(r"\.(pdf|jpe?g|png|gif|webp|svg|docx?|xlsx?|pptx?|zip|mp4)$", re.I)
 MAX_SITEMAP_CHILDREN = 12
+
+
+def is_listing_page(url: str) -> bool:
+    return bool(INVENTORY_RE.search(url)) and not NOT_A_PAGE_RE.search(url.split("?")[0])
 
 
 def sitemap_urls(base: str, src: dict) -> list[str]:
@@ -464,7 +473,7 @@ def crawl_source(src: dict, metro: str, limit: int = 100) -> list[dict]:
                 return out                      # the rung worked — do not descend
             log.info("%s: wp-json returned nothing usable, descending the ladder", src["key"])
 
-    urls = [u for u in sitemap_urls(src["url"], src) if INVENTORY_RE.search(u)]
+    urls = [u for u in sitemap_urls(src["url"], src) if is_listing_page(u)]
     urls = urls[:limit] or [src["url"]]
 
     for url in urls:

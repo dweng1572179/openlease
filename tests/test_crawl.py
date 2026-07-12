@@ -707,3 +707,15 @@ def test_sitemap_follows_an_index_into_its_children(monkeypatch):
     # ...and the inventory filter keeps the properties and drops the blog post
     inv = [u for u in urls if crawl.INVENTORY_RE.search(u)]
     assert sorted(inv) == ["https://x.test/properties/a", "https://x.test/properties/b"]
+
+
+def test_the_crawler_does_not_fetch_the_brochure_pdf():
+    """rtl-re.com's sitemap lists a PDF beside every listing, under the same /properties/
+    path — so the inventory pattern matched them and the crawler spent a 4-second
+    politeness delay each on 25 PDFs it could never extract anything from."""
+    assert crawl.is_listing_page("https://rtl-re.com/properties/604-pacific-street/") is True
+    assert crawl.is_listing_page(
+        "https://rtl-re.com/properties/604-pacific-street/604-pacific-street.pdf") is False
+    assert crawl.is_listing_page("https://x.test/properties/a.jpg") is False
+    assert crawl.is_listing_page("https://x.test/blog/hello") is False       # not inventory
+    assert crawl.is_listing_page("https://x.test/listings/1?utm=x") is True  # query is fine
