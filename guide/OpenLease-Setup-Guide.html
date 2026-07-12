@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>OpenLease — Set It Up Yourself</title>
+<link rel="stylesheet" href="assets/guide.css">
+</head>
+<body>
+
+<!-- ============ COVER ============ -->
+<section class="full cover">
+  <div class="top">
+    <div class="logo"><img src="assets/fintok-logo.jpeg" alt="Fintok"><span class="wm">Fintok.news</span></div>
+    <div class="kicker">Setup Guide</div>
+  </div>
+  <h1>Set Up Your Own<br><span class="b">Leasing Search.</span></h1>
+  <p class="sub">A plain‑English guide — no coding, and you never open or edit a single file. If you can install an app and copy‑and‑paste into a website, you can do this. We go one small step at a time and tell you exactly what you'll see after each one.</p>
+  <div class="reassure">
+    <div><div class="k">~15 min</div><div class="v">start to finish</div></div>
+    <div><div class="k">Double‑click</div><div class="v">no terminal, no code</div></div>
+    <div><div class="k">Your PC</div><div class="v">your searches stay home</div></div>
+  </div>
+  <div class="foot">Your own commercial‑leasing search over four metros — New York, Miami, Los Angeles, Chicago — running on your computer, at no cost beyond the API keys you choose to bring.</div>
+</section>
+
+<!-- ============ OVERVIEW ============ -->
+<section class="full page">
+  <div class="eyebrow">The whole thing, in one look</div>
+  <h2 class="sec">Three phases. You can stop after two.</h2>
+  <p class="lead">Here's the entire journey before we start, so nothing is a surprise. You'll only ever <strong>double‑click</strong> and <strong>use your web browser</strong> — never a command, never a file.</p>
+
+  <div class="phases">
+    <div class="phasecard"><div class="num">1</div><div><h3>Install the engine <span style="font-size:10pt;color:var(--slate);font-weight:400">— Windows only</span></h3><p>On <strong>Windows</strong>, install one free thing: <strong>Python</strong> — the "motor" OpenLease runs on. Two clicks and one checkbox. On a <strong>Mac</strong>, skip this entirely — the motor is already built in.</p></div><div class="tag opt">Windows</div></div>
+    <div class="phasecard"><div class="num">2</div><div><h3>Turn OpenLease on</h3><p>Double‑click one file. OpenLease opens in your web browser with four metros and a small demo of listings already loaded, so there's something to search immediately.</p></div><div class="tag free">Free</div></div>
+    <div class="phasecard"><div class="num">3</div><div><h3>Add your keys (the AI)</h3><p>Plain‑English search, the conversational reply, semantic ranking, a Street View thumbnail — each is a "key" you paste into the app's Settings page. Add what you need.</p></div><div class="tag opt">Optional</div></div>
+  </div>
+
+  <div class="note calm"><b style="color:var(--navy)">You never touch code or files.</b> After Phase 2, OpenLease already searches its demo listings across all four metros — for free, no key. Phase 3 is a menu you turn on inside the app, by pasting keys. There's no wrong order and nothing to break.</div>
+  <div class="note" style="margin-top:12px"><b>On a Mac? Start at Phase 2.</b> Macs already have the engine built in, so Phase 1 is for Windows only — skip it. That makes the whole thing about <strong>10 minutes</strong> for you.</div>
+</section>
+
+<!-- ============ PHASE 1 ============ -->
+<section class="page break">
+  <div class="band"><span class="pill">Phase 1</span><div class="bt"><h2>Install the engine</h2><p>Windows only — one download, one checkbox, ~3 min. <strong style="color:#fff">Mac owners: skip this page.</strong></p></div><span class="wmmini">Fintok · OpenLease</span></div>
+
+  <div class="note calm" style="margin:0 0 16px"><b style="color:var(--navy)">On a Mac? You are already done with Phase 1.</b> macOS ships with Python — the engine OpenLease runs on — already installed. Nothing to download, nothing to click. Turn the page to Phase 2.</div>
+
+  <div class="steps">
+    <div class="step"><div class="dot">1</div><h3>Download Python</h3><p>In your web browser, go to the address below and click the big yellow <strong>Download Python</strong> button at the top. Don't worry about the version number — whichever one it offers is the right one.</p>
+      <div class="cmd"><span class="c">↗</span> python.org/downloads</div>
+      <div class="see"><b>What you'll see:</b> a file downloading, with a name like <span class="file">python‑3.13.exe</span>, in your <strong>Downloads</strong> folder.</div></div>
+
+    <div class="step"><div class="dot">2</div><h3>Run it — and tick the box</h3><p>Open your <strong>Downloads</strong> folder and double‑click the file you just downloaded. An installer window opens with two buttons and a couple of checkboxes at the bottom.</p>
+      <div class="warn"><b>This is the one thing you must not miss.</b> At the bottom of that window, tick <strong>"Add python.exe to PATH"</strong> <em>before</em> you click anything else. It's a small checkbox and it is easy to skip — but without it, OpenLease can't find the engine and won't start.</div>
+      <p>Then click <strong>Install Now</strong> and let it run. If Windows asks "Do you want to allow this app to make changes?", click <strong>Yes</strong>.</p></div>
+
+    <div class="step"><div class="dot">3</div><h3>Close it</h3><p>When it says <strong>Setup was successful</strong>, click <strong>Close</strong>. That's the whole phase — no account, no restart, nothing to leave running.</p>
+      <div class="see"><b>You're done when:</b> the installer says <strong>Setup was successful</strong> and closes. Python now sits quietly in the background forever; you will never open it or think about it again.</div></div>
+  </div>
+
+  <div class="milestone"><h3><span class="big">Engine installed.</span></h3><p>That's the only software you'll ever install for OpenLease. Turn the page and let's switch the tool on.</p></div>
+</section>
+
+<!-- ============ PHASE 2 ============ -->
+<section class="page break">
+  <div class="band"><span class="pill">Phase 2</span><div class="bt"><h2>Turn OpenLease on</h2><p>Download, unzip, double‑click — it opens in your browser. ~5 min.</p></div><span class="wmmini">Fintok · OpenLease</span></div>
+  <div class="steps">
+    <div class="step"><div class="dot">1</div><h3>Download OpenLease</h3><p>In your browser, go to OpenLease's page on GitHub, click the green <strong>Code</strong> button, then <strong>Download ZIP</strong>.</p>
+      <div class="cmd"><span class="c">↗</span> github.com/dweng1572179/openlease</div>
+      <div class="see"><b>What you'll see:</b> a file named <span class="file">openlease-main.zip</span> in your Downloads folder.</div></div>
+    <div class="step"><div class="dot">2</div><h3>Unzip it</h3><p>Open your <strong>Downloads</strong> folder and double‑click <span class="file">openlease-main.zip</span>. A folder appears. Drag it onto your <strong>Desktop</strong> so it's easy to find — the folder's name doesn't matter, only where you can find it again.</p></div>
+    <div class="step"><div class="dot">3</div><h3>Double‑click "Start OpenLease"</h3><p>Open that folder on your Desktop. Right there — not in any sub‑folder — is the file for your computer. Double‑click it:</p>
+      <div class="pastebox"><span class="lbl">Mac</span> <span class="file">Start OpenLease.command</span> &nbsp;·&nbsp; <span class="lbl">Windows</span> <span class="file">Start OpenLease.bat</span></div>
+      <div class="warn"><b>Mac may say "unidentified developer."</b> If it blocks the file, <strong>right‑click</strong> it → <strong>Open</strong> → <strong>Open</strong>. You only do this once, ever.</div>
+      <div class="see"><b>What you'll see:</b> a black window opens and shows progress. <strong>The first time takes a couple of minutes</strong> while it builds your tool — this is normal. Leave the window; after this it starts in seconds.</div></div>
+    <div class="step"><div class="dot">4</div><h3>Log in</h3><p>Your browser opens by itself to your new tool. If it doesn't within a minute, open your browser and type this into the address bar:</p>
+      <div class="cmd"><span class="c">↗</span> localhost:8788</div>
+      <p>In the <strong>Password</strong> box type the starting password, then click the blue <strong>Sign in</strong> button:</p>
+      <div class="pastebox"><span class="lbl">Password</span> <span class="file">changeme</span></div>
+      <div class="see"><b>Change it later:</b> the password lives in a file called <span class="file">.env</span> next to <span class="file">Start OpenLease</span>, as <span class="file">OPENLEASE_PASSWORD</span> — worth changing if this machine is reachable by anyone but you.</div></div>
+  </div>
+  <div class="milestone"><h3>🎉 <span class="big">You're in — that's the setup.</span></h3><p>Pick a metro and search right now — four cities, a small demo of listings, a map, no key required. Start/stop anytime with the <span class="file">Start OpenLease</span> / <span class="file">Stop OpenLease</span> files; turn the page to add the AI.</p></div>
+</section>
+
+<!-- ============ PHASE 3 ============ -->
+<section class="page break">
+  <div class="band"><span class="pill">Phase 3</span><div class="bt"><h2>Add your keys — the AI</h2><p>Optional. Each key unlocks more, and it's all done inside the app.</p></div><span class="wmmini">Fintok · OpenLease</span></div>
+  <div class="keyintro">
+    <h3>🔑 How to add any key — the same 3 clicks every time</h3>
+    <ol>
+      <li>In OpenLease, click <strong>Settings</strong> — the small link in the very <strong>top‑right corner</strong>.</li>
+      <li>You'll see a labeled box for each key. <strong>Paste</strong> your key into the box with the matching name, then click <strong>Save</strong>.</li>
+      <li>The Settings page shows which capabilities are <strong>live</strong> next to what you just switched on. Done — no restart, ever.</li>
+    </ol>
+    <div class="warn" style="margin-top:9px"><b>None of these are required to search.</b> The demo listings, a CSV you import, and the free government feeds already carry full address/size/rent with no key at all. A key only matters for two things: letting you type a sentence instead of picking filters (and getting a written reply), and letting the crawler read size/rent off an ordinary broker page that doesn't publish them as structured data.</div>
+  </div>
+
+  <div class="keycard"><div class="head"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="#3457c9" stroke-width="2"><path d="M12 3v3M12 18v3M4.2 7l2.6 1.5M17.2 15.5l2.6 1.5M4.2 17l2.6-1.5M17.2 8.5l2.6-1.5"/><circle cx="12" cy="12" r="3.2"/></svg></div><div class="t"><h3>Anthropic (Claude)</h3><div class="u">Plain‑English search, the conversational reply, per‑listing chat, and reading size/rent off pages that don't publish them structurally</div></div><div class="cost"><div class="amt">~$5–20/mo</div>pay as you go</div></div>
+    <div class="body"><ol>
+      <li>Go to <strong>console.anthropic.com</strong> and sign up (email or Google), confirming your email.</li>
+      <li>Click <strong>Billing</strong> → add a card → <strong>Buy credits</strong> (a few dollars is enough to start). <em>Do this first — the key won't work without credit.</em></li>
+      <li>Click <strong>API Keys</strong> → <strong>Create Key</strong>, then <strong>copy it right away</strong> (it's shown only once).</li>
+      <li>In OpenLease: Settings → paste into <strong>Anthropic API key</strong> → <strong>Save</strong>.</li>
+    </ol><div class="meta"><span>⏱ ~5 min</span><span>💳 A few cents per AI action; you prepay and spend down slowly</span><span>Key starts with <span class="mono">sk‑ant‑</span></span></div></div></div>
+
+  <div class="keycard"><div class="head"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="#3457c9" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h7"/><circle cx="19" cy="17" r="2.3"/></svg></div><div class="t"><h3>Voyage AI</h3><div class="u">Semantic ranking — matches "creative loft office" to a listing that never uses those words</div></div><div class="cost"><div class="amt">~Free</div>generous free tier</div></div>
+    <div class="body"><ol>
+      <li>Go to <strong>dash.voyageai.com</strong> and sign up (email or Google) — no card required for the free tier.</li>
+      <li>Open <strong>API Keys</strong> in the dashboard, click <strong>Create</strong>, and copy the key.</li>
+      <li>In OpenLease: Settings → paste into <strong>Voyage API key</strong> → <strong>Save</strong>.</li>
+    </ol><div class="meta"><span>⏱ ~3 min</span><span>💡 The free tier covers this size of corpus roughly 400× over</span><span>Only affects ranking, never a hard filter</span></div></div></div>
+
+  <div class="keycard"><div class="head"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="#3457c9" stroke-width="2"><path d="M12 21s7-6.5 7-11.5A7 7 0 105 9.5C5 14.5 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.3"/></svg></div><div class="t"><h3>Google Maps</h3><div class="u">One thing only: the Street View thumbnail on a listing page</div></div><div class="cost"><div class="amt">~Free</div>ordinary personal use</div></div>
+    <div class="body"><ol>
+      <li>Go to <strong>console.cloud.google.com</strong>, create (or pick) a project, and enable the <strong>Street View Static API</strong>.</li>
+      <li>Under <strong>Credentials</strong>, click <strong>Create Credentials → API key</strong>, then copy it. Restricting the key to just that one API is recommended.</li>
+      <li>In OpenLease: Settings → paste into <strong>Google Maps key</strong> → <strong>Save</strong>.</li>
+    </ol><div class="meta"><span>⏱ ~5 min</span><span>💡 Requires a billing‑enabled Google Cloud project, even though ordinary personal use stays inside the free tier</span><span>Nothing else in OpenLease uses this key</span></div></div></div>
+
+  <div class="note"><b>Which keys do you actually need?</b> If you just want the four metros, the map, parcel data, and Walk/Transit Score — nothing. It already works. Add <strong>Anthropic</strong> when you want to type a sentence instead of picking filters, want the written reply and per‑listing chat, or want the crawler to read size/rent off an ordinary web page. Add <strong>Voyage</strong> once you have enough listings that "similar to this one" is worth having — it's nearly free. Add <strong>Google Maps</strong> only for the Street View thumbnail.</div>
+</section>
+
+<!-- ============ FIRST SEARCH ============ -->
+<section class="page break">
+  <div class="eyebrow">Your first search</div>
+  <h2 class="sec">Try the exact search this guide is written around.</h2>
+  <p class="lead">This isn't a hypothetical example — it's the search this whole guide, and the app's own README, describe. With the demo listings loaded (they load automatically) and <strong>no API key configured</strong>, do this:</p>
+
+  <div class="steps">
+    <div class="step"><div class="dot">1</div><h3>Pick Miami</h3><p>At the top of the OpenLease home page, set the metro to <strong>Miami</strong>.</p></div>
+    <div class="step"><div class="dot">2</div><h3>Type the search</h3><p>Into the search box, type exactly this, and press search:</p>
+      <div class="pastebox"><span class="lbl">Search</span> <span class="file">retail in Wynwood ~1,500 SF under $8k/mo</span></div></div>
+    <div class="step"><div class="dot">3</div><h3>Read the banner</h3><p>$8,000/mo works out to a rent cap of about <strong>$64/SF/yr</strong> for a 1,500 SF space (<span class="mono">8000 × 12 ÷ 1500</span>). The one listing that otherwise matches — 2618 NW 2nd Ave, Wynwood — actually asks <strong>$95/SF/yr</strong>.</p>
+      <div class="see"><b>What you'll see:</b> a banner across the results plainly saying the rent cap was relaxed to surface this listing, instead of either hiding zero results or quietly pretending it was a clean match. One result card, one pin on the map.</div></div>
+    <div class="step"><div class="dot">4</div><h3>Open the listing</h3><p>Click the result card. You'll land on a listing page with a Walk Score breakdown (per amenity category), a parcel panel (owner/zoning where the county publishes it), and a <strong>Save</strong> button.</p></div>
+  </div>
+
+  <div class="milestone"><h3><span class="big">That's the whole promise, in one search.</span></h3><p>Real listing, real map pin, an honest banner about what it had to relax to find it — and not one API key was used anywhere in this walkthrough.</p></div>
+</section>
+
+<!-- ============ WHERE LISTINGS COME FROM ============ -->
+<section class="page break">
+  <div class="eyebrow">Supply</div>
+  <h2 class="sec">Three ways listings get in.</h2>
+  <p class="lead">In order of how much you should trust them — and what each one costs you in risk.</p>
+
+  <div class="fixtable">
+    <div class="fixrow"><div class="p">1. Free government feeds</div><div class="f">No terms‑of‑service surface at all. NYC's Storefront Registry publishes a <b>vacancy flag</b> on every ground‑floor commercial space in the city — <b>43,978 vacant storefronts</b> citywide as of this writing — via <span class="mono" style="background:var(--ink);color:#cdd9f5;padding:1px 6px;border-radius:5px">POST /api/import/storefronts</span>. That's a lead source no broker site publishes.</div></div>
+    <div class="fixrow"><div class="p">2. Your own CSV</div><div class="f">A broker export, a CoStar pull, whatever you already have rights to: <span class="mono" style="background:var(--ink);color:#cdd9f5;padding:1px 6px;border-radius:5px">POST /api/import/csv</span>.</div></div>
+    <div class="fixrow"><div class="p">3. The crawler</div><div class="f"><span class="mono" style="background:var(--ink);color:#cdd9f5;padding:1px 6px;border-radius:5px">POST /api/crawl</span>, over the allowlist in <span class="file" style="background:var(--navy)">app/data/sources.yml</span>. Size and asking rent from a crawled page generally need the Anthropic key to read out of the page's prose — the government feed and your own CSV already arrive structured.</div></div>
+  </div>
+
+  <div class="note calm" style="margin-top:18px"><b style="color:var(--navy)">What the crawler will not do.</b><br><br>
+  <b>It never logs in.</b> Not to any site, not ever, and there is no setting to turn that on — no account, no cookie, no registration‑ or NDA‑gated page. Getting past a bot‑wall on a page that's already public is one thing; crossing an authentication wall is another, and OpenLease doesn't do the second one, ever.<br><br>
+  <b>It stores facts, not expression.</b> Address, size, ask, type, broker contact, and a link back to the original — never the broker's marketing paragraph verbatim (OpenLease writes its own description from the facts) and never a re‑hosted copy of their photo (it's hot‑linked from the broker's own server).<br><br>
+  <b>It identifies itself honestly and asks first.</b> It reads and obeys <span class="mono" style="background:var(--ink);color:#cdd9f5;padding:1px 6px;border-radius:5px">robots.txt</span>, including <span class="mono" style="background:var(--ink);color:#cdd9f5;padding:1px 6px;border-radius:5px">Crawl-delay</span>, under the same identity the whole way through. One request every 3–5 seconds per domain, backing off if a site is struggling, a daily cap per domain, and it re‑uses what it already has rather than re‑asking every time.</div>
+</section>
+
+<!-- ============ WHAT EACH METRO WON'T TELL YOU ============ -->
+<section class="page break">
+  <div class="eyebrow">Parcel data</div>
+  <h2 class="sec">What a metro doesn't publish, it says it doesn't publish.</h2>
+  <p class="lead">Every metro has at least one field the public data simply does not carry. OpenLease shows that as a labeled gap, with the reason on hover — never a blank pretending to be a zero.</p>
+
+  <div class="fixtable">
+    <div class="fixrow"><div class="p">Los Angeles — owner name</div><div class="f">LA County does not publish owner‑of‑record for free; California statute keeps it out of the open assessor feed.</div></div>
+    <div class="fixrow"><div class="p">Chicago — zoning (suburbs)</div><div class="f">The zoning dataset is the <b>City of Chicago's own</b> layer — it's blank for anything in suburban Cook County, because the city doesn't zone land it doesn't govern.</div></div>
+    <div class="fixrow"><div class="p">Miami — zoning (incorporated cities)</div><div class="f">Miami‑Dade's county zoning layer only covers unincorporated land. Inside cities like Wynwood and Brickell, OpenLease falls through to the municipal layer — and it's still blank wherever neither one publishes.</div></div>
+  </div>
+
+  <div class="note" style="margin-top:16px"><b>A tool that guesses is worse than a tool that admits it doesn't know.</b> Every one of these reads "not published here," with the specific reason, rather than a silent blank or an invented value.</div>
+</section>
+
+<!-- ============ COSTS ============ -->
+<section class="page break">
+  <div class="eyebrow">Straight talk about money</div>
+  <h2 class="sec">What it really costs.</h2>
+  <p class="lead">OpenLease itself is free — you only pay the AI providers for what you use, at <strong>their</strong> price, with no markup. Here's an honest estimate so nothing surprises you.</p>
+
+  <div class="costtable">
+    <div class="costrow"><div class="w"><div class="n">Anthropic (Claude) — search, replies, chat, extraction</div><div class="d">A few cents per AI action, prepaid and spent down.</div></div><div class="amt">$5–20<small>per month, as you use it</small></div></div>
+    <div class="costrow"><div class="w"><div class="n">Voyage AI — semantic ranking</div><div class="d">Free tier covers this corpus roughly 400× over.</div></div><div class="amt">$0<small>essentially always free</small></div></div>
+    <div class="costrow"><div class="w"><div class="n">Google Maps — Street View thumbnail</div><div class="d">One image per listing view; ordinary personal use stays inside the free tier.</div></div><div class="amt">$0<small>free tier, personal use</small></div></div>
+    <div class="costrow"><div class="w"><div class="n">Parcels, storefront vacancy, Walk/Transit Score, OSRM</div><div class="d">Real government and OpenStreetMap data. No meaningful limits.</div></div><div class="amt">$0<small>always free</small></div></div>
+  </div>
+
+  <div class="bottomline">
+    <div class="blcard you">
+      <h4>Your likely bill</h4>
+      <div class="row"><span>Keyless (demo data / your CSV / gov feeds only)</span><span>$0/mo</span></div>
+      <div class="row"><span>Occasional AI use</span><span>~$5–15/mo</span></div>
+      <div class="row"><span>Daily use, several metros</span><span>~$20–40/mo</span></div>
+      <p style="margin:10px 0 0;font-size:9.6pt;color:var(--on-ink-mute)">…and you're paying the AI providers directly — at cost, no seats, no expiring credits.</p>
+    </div>
+    <div class="blcard them">
+      <h4>The commercial subscriptions this replaces</h4>
+      <div class="price">Hundreds<span style="font-size:11pt;color:var(--slate)">/mo per seat</span></div>
+      <p style="margin:2px 0 0;font-size:10pt;color:var(--slate)">Typically an annual contract, a per‑seat fee, and a sales call before you see a price at all.</p>
+    </div>
+  </div>
+  <div class="note" style="margin-top:16px"><b>Rule of thumb:</b> only add the keys you'll actually use, and keep an eye on the spend meter at the top of the app. It caps paid calls at a monthly limit you set in Settings.</div>
+</section>
+
+<!-- ============ CLOSING ============ -->
+<section class="close-sheet close">
+  <div class="inner">
+    <div class="logo on-dark"><img src="assets/fintok-logo.jpeg" alt="Fintok"><span class="wm">Fintok.news</span></div>
+    <h2>You own it now.</h2>
+    <p class="sub">OpenLease runs on your computer, with your own keys, showing your searches to no one. No subscription, no seat fee, no expiring credits. Start it any time by double‑clicking <span class="file" style="background:rgba(255,255,255,.14)">Start OpenLease</span> in the openlease folder.</p>
+    <div class="cards">
+      <div class="c"><h4>It's private</h4><p>Everything saves on your machine. Your searches and saved listings never leave it.</p></div>
+      <div class="c"><h4>It's yours</h4><p>Keys are pasted in Settings and can be changed or removed anytime. No lock‑in.</p></div>
+      <div class="c"><h4>It's honest</h4><p>Every score explains itself, every missing field says why, and every AI fallback is disclosed rather than hidden.</p></div>
+    </div>
+    <div class="foot">
+      <div class="logo on-dark sm"><img src="assets/fintok-logo.jpeg" alt=""><span class="wm">Fintok.news</span></div>
+      <div class="tag">OpenLease — made to be owned, not rented.</div>
+    </div>
+  </div>
+</section>
+
+</body>
+</html>

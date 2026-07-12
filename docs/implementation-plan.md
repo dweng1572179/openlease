@@ -7474,6 +7474,39 @@ admits.
 PolyForm Noncommercial 1.0.0 — see `LICENSE.md`. Use it for anything except selling it.
 ````
 
+> **Correction (Task 14 review):** two numbers in the draft above are wrong once checked
+> against what was actually verified in Task 8, and the draft never gives a reader
+> anything to actually try — the shipped README fixes all three.
+> 1. **"Bay Ridge = 98" overclaims a reproduction that didn't happen.** Task 8's own
+>    verification (`task-8-report.md`) computed Bay Ridge at **95** against the committed
+>    Overpass fixture — Walk Score's own site publishes 98, so this is 3 points low, for a
+>    documented reason (OSM's POI density in Bay Ridge's weakest categories — parks, books,
+>    schools — is thinner than whatever database Walk Score used in 2011). `test_score.py`
+>    already encodes this as an accepted 93–100 band, not an exact match. The README states
+>    95, not 98, and says why, plus the Vernon, LA = 18 control that proves the score
+>    discriminates at all.
+> 2. **"Calibrated, not published" describes a calibration that never happened.**
+>    `score.TRANSIT_NORM` and `score.TRIPS_PER_WEEK` are flagged `ponytail:` in the code as
+>    an **eyeballed guess, not fit against verified ground truth** — there is no
+>    `--calibrate` tool and no ~20-address fit was ever run. The correct claim is
+>    "uncalibrated," not "calibrated but secret." The README says "not calibrated" and
+>    repeats the code's own instruction: treat it as a ranking, not a rating.
+> 3. **The draft describes the app but never shows the demo.** The shipped README adds a
+>    "Try it" walkthrough using the exact search `app/ai.py`'s own `demo()` self-check
+>    exercises — *"retail in Wynwood ~1,500 SF under $8k/mo"* in Miami — and states the
+>    real near-miss banner it produces (rent cap relaxed to admit the $95/SF/yr listing
+>    against the $64/SF/yr the query implies), plus the exact NYC storefront-vacancy count
+>    (43,978) and the crawler's honest limitation that size/rent from an ordinary crawled
+>    page need the LLM rung, none of which the original draft mentioned.
+> 4. **Step 5's own "Expected" line overclaims what the demo listing page shows.** Run
+>    against a live server (`DB_PATH` pointed at a scratch DB, not `openlease.db`), the
+>    Wynwood listing's page shows a parcel panel (a real request-time lookup — for this
+>    address it genuinely returns "No parcel matched," logged as a warning, not a crash)
+>    and a Save button, but **no Walk Score or Transit Score row** — `seed.py` never calls
+>    `score.enrich()`, those two fields are null for every seed listing, and
+>    `listing.html`'s `{% if val is not none %}` guard correctly omits a null row instead of
+>    showing 0. The corrected "Expected" line above reflects the actual response.
+
 - [ ] **Step 2: Add the license**
 
 ```bash
@@ -7538,8 +7571,13 @@ rm -f openlease.db* && .venv/bin/python -m app.seed && ./run.sh
 ```
 
 Open http://localhost:8788, log in, and run the README's own example search in Miami.
-Expect: results, pins, a listing page with a Walk Score breakdown, a parcel panel, a save
-button, and no key anywhere. Ctrl-C when done.
+Expect: a near-miss banner, one result, one pin, and a listing page with a parcel panel
+(a real request-time lookup — this specific seed address comes back "No parcel matched,"
+which is itself an honest answer) and a save button, and no key anywhere. Do **not** expect
+a Walk Score/Transit Score row on this listing — `seed.py` never calls `score.enrich()`, so
+those two fields are genuinely null for every seed listing, not merely hidden; the fact
+panel's `{% if val is not none %}` guard correctly omits the row rather than showing a 0.
+Ctrl-C when done.
 
 - [ ] **Step 6: Commit and push**
 
