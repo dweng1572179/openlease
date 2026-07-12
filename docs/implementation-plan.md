@@ -3493,7 +3493,9 @@ def _query(lat: float, lng: float) -> str:
         parts.append(f'nwr(around:{RADIUS_M},{lat},{lng})[{key}~"^({"|".join(vals)})$"];')
     # bus routes for Transit Score come from the stops' route_ref tag
     parts.append(f'nwr(around:{RADIUS_M},{lat},{lng})[highway=bus_stop];')
-    return f"[out:json][timeout:60];\n({chr(10).join(parts)}\n);\nout center tags;"
+    # 120s, not 60: this query genuinely needs ~43s of Overpass compute over a dense metro
+    # and 504'd twice at [timeout:60]. See the correction note below. INGEST-TIME only.
+    return f"[out:json][timeout:120];\n({chr(10).join(parts)}\n);\nout center tags;"
 
 
 def pois(lat: float, lng: float) -> list[dict]:

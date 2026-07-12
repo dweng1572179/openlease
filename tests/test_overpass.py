@@ -81,6 +81,10 @@ def test_query_uses_nwr_not_node_and_requests_a_center_point():
     assert "nwr(" in q
     assert "node(" not in q
     assert "out center tags" in q
+    # A 2414m radius over a dense metro genuinely needs ~43s of Overpass compute; at
+    # [timeout:60] this 504'd twice on the Empire State Building point. Pin the bumped
+    # value — a silent revert to 60 turns a working ingest into an intermittent one.
+    assert "[timeout:120]" in q
 
 
 def test_normalize_handles_nodes_ways_and_bus_stops(isolated_db, monkeypatch):

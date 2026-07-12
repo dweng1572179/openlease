@@ -11,6 +11,10 @@ from app.providers import rail
 
 _RAIL_DIR = rail._DIR
 
+# Real counts as generated from each agency's open data (spec §7). Both the NYC dedup bug
+# (496 -> 379) and the Chicago schema drift (145 -> 0) produced plausible-looking files.
+_EXPECTED_STATIONS = {"nyc": 496, "mia": 44, "la": 111, "chi": 145}
+
 
 def _clear():
     rail.stations.cache_clear()
@@ -64,12 +68,20 @@ def test_real_bundled_rail_files_exist_and_are_well_formed():
     total_bytes = 0
     total_stations = 0
     try:
-        for metro in METRO_KEYS:
+        for metro, expected in _EXPECTED_STATIONS.items():
             p = _RAIL_DIR / f"{metro}.json"
             assert p.exists(), f"{p} is missing — run `python -m app.data.rail.refresh`"
             data = json.loads(p.read_text())
-            assert len(data) > 10, (
-                f"{metro}.json has only {len(data)} stations — looks broken, not just stale"
+            # A ±5% band, not an order-of-magnitude one. An agency opening or closing a
+            # station moves this by 1; the bugs this file exists to catch move it by tens.
+            # The NYC generator originally deduped on `name`, silently collapsing 496 real
+            # stations to 379 (-24%) — a `> 10` bound sails straight past that, which is
+            # exactly the "wrong data that looks like it worked" failure this project keeps
+            # hitting. Widen the band if an agency really does open a line; do not remove it.
+            lo, hi = round(expected * 0.95), round(expected * 1.05)
+            assert lo <= len(data) <= hi, (
+                f"{metro}.json has {len(data)} stations, expected ~{expected} (band {lo}-{hi}). "
+                f"A big drop usually means the dedup key or an upstream field name broke."
             )
             for row in data:
                 assert row.keys() >= {"name", "lat", "lng", "mode", "routes"}
