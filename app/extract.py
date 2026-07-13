@@ -116,6 +116,12 @@ class ListingExtract(BaseModel):
         d = {k: v for k, v in self.model_dump().items() if v not in ("", 0, 0.0, [])}
         if "features" in d:
             d["features_json"] = json.dumps(d.pop("features"))
+        # A rent with no unit is not a rent. The card would render it "/SF/yr" while
+        # db.filter_listings' CASE has no ELSE and yields NULL — so the row is shown at one
+        # price and silently excluded from every search that caps on it. Display and filter
+        # must never disagree: if we don't know the unit, we don't have the rent.
+        if d.get("asking_rent") and not d.get("rent_unit"):
+            d.pop("asking_rent")
         return d
 
 
@@ -329,7 +335,12 @@ def _headline(html: str) -> str | None:
         m = pat.search(html)
         if m:
             h = re.sub(r"<[^>]+>", "", m.group(1)).strip()
-            h = re.split(r"\s+[|–—]\s+", h)[0].strip()     # drop "| Site Name"
+            # Split on a plain hyphen as well as the pipes and dashes. Without it,
+            # "<title>540 Rose Avenue - WESTMAC Commercial Brokerage</title>" became the
+            # ADDRESS — a fact field — and "280 Broadway - Ground Floor Retail!! - Prime
+            # Corner" persisted the broker's own marketing headline, which is the one thing
+            # we never store.
+            h = re.split(r"\s+[|\u2013\u2014\-\u00b7\u2022]\s+", h)[0].strip()
             if h:
                 return h[:120]
     return None
@@ -368,34 +379,52 @@ def _decoyed(text: str, at: int) -> bool:
     return bool(_RENT_DECOY.search(text[max(0, at - _DECOY_WINDOW):at]))
 
 
+# The UNIT is not optional — it is the only thing separating a size from any other number
+# that happens to follow a label. Without it, "Availability: 2026" made a DATE into a
+# 2,026 SF listing, so "availability" is out of the label set too.
 _SIZE_LABEL = re.compile(
-    r"(?<!filter by )(?:size|space available|availability|sf\s+available|square\s+footage"
-    r"|square\s+feet|divisible)\s*[:\-\u2013]?\s*([\d][\d,]{1,8})\s*(?:\+/-\s*)?"
-    r"(?:SF\b|sq\.?\s?ft|square\s+feet)?", re.I)
+    r"(?:size|space available|sf\s+available|square\s+footage|divisible)"
+    r"\s*[:\-\u2013]?\s*([\d][\d,]{1,8})\s*(?:\+/-\s*)?"
+    r"(?:SF\b|sq\.?\s?ft|square\s+feet)", re.I)
 
 
 def _size_of(text: str) -> int | None:
-    """This listing's size. Prefers a LABELLED value ("Size: 3,305 SF"); otherwise the most
-    REPEATED one — a listing page says its own size several times, while a filter dropdown
-    says each of its options exactly once."""
-    labelled = [_num(s) for s in _SIZE_LABEL.findall(text)]
-    labelled = [s for s in labelled if _MIN_SF <= s <= _MAX_SF]
-    if labelled:
-        return int(labelled[0])
+    """This listing's size, or None.
 
+    A broker page is full of square footages that are not this suite's: the whole BUILDING's
+    footprint ("1250 Broadway is a 807,000 SF tower"), a size-filter dropdown, and a "nearby
+    availabilities" module listing OTHER suites in the same building.
+
+    A labelled figure wins. Otherwise the most REPEATED one — a listing states its own size
+    several times, while a tower's footprint and each dropdown option are stated once. And if
+    NOTHING repeats and there is more than one candidate, we refuse: taking "the first in
+    document order" is exactly how a 807,000 SF tower became the size of a 3,305 SF suite.
+    """
     from collections import Counter
     found = [_num(s) for s in _SIZE.findall(text)]
     found = [s for s in found if _MIN_SF <= s <= _MAX_SF]
     if not found:
         return None
     counts = Counter(found)
+
+    labelled = [_num(s) for s in _SIZE_LABEL.findall(text)]
+    labelled = [s for s in labelled if _MIN_SF <= s <= _MAX_SF]
+    if labelled:
+        v = labelled[0]
+        # A label is not proof. "Size  1,000 SF  1,999 SF  4,999 SF" is a DROPDOWN whose
+        # first option happens to sit behind the word "Size" — the same bug in a hat. Trust
+        # the label only when the value repeats, or when it is the only size on the page.
+        if counts[v] >= 2 or len(counts) == 1:
+            return int(v)
+        return None
+
     top, n = counts.most_common(1)[0]
-    if n < 2 and len(counts) > 3:
-        return None          # many one-off numbers and nothing repeated: a dropdown, not a listing
+    if n < 2 and len(counts) > 1:
+        return None          # nothing repeats and several candidates — we cannot tell which
     return int(top)
 
 
-def _rent_of(text: str) -> tuple[float, str] | None:
+def _rent_of(text: str, metro: str = "", ptype: str = "") -> tuple[float, str] | None:
     """This listing's ask, and the unit it is quoted in.
 
     Every real broker page we crawl puts the rent behind a label and surrounds it with
@@ -429,10 +458,9 @@ def _rent_of(text: str) -> tuple[float, str] | None:
         monthly = period.startswith("mo")
 
         if per_sf:
-            if monthly and _MIN_SF_MO <= val <= _MAX_SF_MO:
-                per_sf_hits.append((val, "sf_mo"))
-            elif not monthly and _MIN_SF_YR <= val <= _MAX_SF_YR:
-                per_sf_hits.append((val, "sf_yr"))
+            unit = _unit_for(val, period, metro, ptype)
+            if unit:
+                per_sf_hits.append((val, unit))
         elif val >= 500:
             # A gross figure. "Monthly Rent: $16,525" is a rent; "Asking Price $6,500,000"
             # is a SALE and is handled separately — never as a rent.
@@ -449,13 +477,44 @@ def _rent_of(text: str) -> tuple[float, str] | None:
     # page AND nothing decoy-shaped introduces it.
     mo = [_num(m.group(1)) for m in _RENT_SF_MO.finditer(text)
           if not _decoyed(text, m.start()) and _MIN_SF_MO <= _num(m.group(1)) <= _MAX_SF_MO]
-    yr = [_num(m.group(1)) for m in _RENT_SF.finditer(text)
-          if not _decoyed(text, m.start()) and _MIN_SF_YR <= _num(m.group(1)) <= _MAX_SF_YR]
     if len(set(mo)) == 1:
         return mo[0], "sf_mo"
-    if not mo and len(set(yr)) == 1:
-        return yr[0], "sf_yr"
-    return None
+    if mo:
+        return None
+    bare = [_num(m.group(1)) for m in _RENT_SF.finditer(text)
+            if not _decoyed(text, m.start())]
+    if len(set(bare)) != 1:
+        return None
+    unit = _unit_for(bare[0], "", metro, ptype)
+    return (bare[0], unit) if unit else None
+
+
+# The yearly and monthly bands OVERLAP: $5-$90/SF is plausible as either. LA and industrial
+# quote per MONTH; everyone else quotes per YEAR — and a page that states the convention once
+# in a header and then just writes "$5.75/SF" is common. Defaulting an unqualified figure to
+# yearly turned a $69/SF/yr West LA office into a $5.75/SF/yr bargain, which then surfaced in
+# every "cheap space" search a broker ran. A 12x error that READS AS A BARGAIN is the worst
+# possible way to be wrong. So if the page doesn't say, and the market and the asset class
+# don't settle it, we refuse.
+_AMBIGUOUS_LO, _AMBIGUOUS_HI = _MIN_SF_YR, _MAX_SF_MO        # [5.0, 90.0]
+
+
+def _unit_for(val: float, period: str, metro: str, ptype: str) -> str | None:
+    if period.startswith("mo"):                    # the page said monthly
+        return "sf_mo" if _MIN_SF_MO <= val <= _MAX_SF_MO else None
+    if period:                                     # the page said yearly
+        return "sf_yr" if _MIN_SF_YR <= val <= _MAX_SF_YR else None
+
+    if val > _AMBIGUOUS_HI:                        # too big to be a monthly per-SF rate
+        return "sf_yr" if val <= _MAX_SF_YR else None
+    if val < _AMBIGUOUS_LO:                        # too small to be a yearly per-SF rate
+        return "sf_mo" if val >= _MIN_SF_MO else None
+
+    if metro == "la" or ptype in ("industrial", "flex"):
+        return "sf_mo"                             # the LA / industrial convention
+    if metro in ("nyc", "mia"):
+        return "sf_yr"
+    return None                                    # we do not know, so we do not say
 
 
 _SALE_LABEL = re.compile(
@@ -508,28 +567,39 @@ def from_html_facts(html: str, url: str, src: dict, metro: str) -> dict | None:
     if size:
         d["size_sf"] = size
 
-    rent = _rent_of(txt)
-    if rent:
-        d["asking_rent"], d["rent_unit"] = rent
-
-    # The type is the one the page TALKS about, not the first one it happens to mention.
-    # Taking the first hit in _TYPES order typed every Metro Manhattan listing "retail" —
-    # their pages say "office" twenty times and "retail" twice, and "retail" is first in
-    # the tuple.
+    # The TYPE has to be read before the rent: LA and industrial quote per MONTH, and an
+    # unqualified "$5.75/SF" cannot be resolved without knowing which.
+    #
+    # And it is the type the page actually TALKS about, not the first one it happens to
+    # mention. Taking the first hit in _TYPES order typed every Metro Manhattan listing
+    # "retail" — their pages say "office" twenty times and "retail" twice, and "retail" is
+    # first in the tuple. A 1-vs-1 tie must not fall back to that same bias either
+    # ("ground-floor retail below" on an office page), so a tie goes to the non-retail term.
     counts = {t: len(re.findall(r"\b" + t + r"\b", txt, re.I)) for t in _TYPES}
-    best = max(counts, key=lambda t: counts[t])
+    best = max(counts, key=lambda t: (counts[t], t != "retail"))
     if counts[best]:
         d["property_type"] = best
+
+    rent = _rent_of(txt, metro, d.get("property_type", ""))
+    if rent:
+        d["asking_rent"], d["rent_unit"] = rent
 
     # A sale, not a lease. RIPCO's 57 West 38th St says "Asking Rent Upon Request" and
     # "Asking Price $6,500,000" on the same page: correctly refusing the rent left us with
     # nothing at all, when the page was telling us plainly what it was.
     if not d.get("asking_rent"):
+        # A SALE — but only on the page's own evidence. `page_text` strips <nav> and
+        # <footer>, not a <header> menu, and every one of these sites has a "Properties For
+        # Sale" link in it. Reading "for sale" off the site's own navigation retyped LEASE
+        # listings as sales, hiding them from every lease search. So a price is the proof;
+        # bare "for sale" prose only counts when it is nowhere near the menu.
         price = _sale_of(txt)
-        if price or re.search(r"\bfor\s+sale\b", txt, re.I):
-            d["transaction_type"] = "sale"
         if price:
+            d["transaction_type"] = "sale"
             d["sale_price"] = price
+        elif re.search(r"\b(?:for\s+sale|sale\s+price|offered\s+for\s+sale)\b",
+                       txt[:4000], re.I) and not re.search(r"\bfor\s+lease\b", txt[:4000], re.I):
+            d["transaction_type"] = "sale"
 
     # An address alone is not a listing — the hard filter runs on SF and rent.
     if not (d.get("size_sf") or d.get("asking_rent") or d.get("sale_price")):

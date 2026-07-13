@@ -770,12 +770,24 @@ def test_the_feed_rung_visits_the_detail_page_for_the_facts(monkeypatch, isolate
     assert "flagship" not in recs[0]["our_description"].lower()
 
 
-def test_the_detail_pass_never_overwrites_what_the_feed_already_said():
-    """The feed is the more reliable source when it says anything at all."""
+def test_the_detail_pass_never_overwrites_what_the_feed_already_said(monkeypatch, isolated_db):
+    """The feed is the more reliable source when it says anything at all.
+
+    The old version of this test gave the record BOTH size and rent, so
+    `_fill_facts_from_detail_pages` short-circuited before fetching anything — the merge it
+    claimed to test never ran, and it would have made a LIVE network call the day that guard
+    changed. Give it a record with a gap, so the merge actually executes."""
+    detail = ("<html><h1>1 Main Street</h1><p>Size: 9,999 SF. Asking Rent: $1/SF/yr. "
+              "Industrial.</p></html>")
+    monkeypatch.setattr(crawl, "fetch", lambda url, src: detail)
+    monkeypatch.setattr(crawl, "_maybe_geocode", lambda d: None)
+
     recs = [{"address": "1 Main St", "metro": "nyc", "source": "x",
-             "source_url": "https://x.test/1", "size_sf": 1500, "asking_rent": 95.0}]
+             "source_url": "https://x.test/1", "size_sf": 1500}]     # rent is missing
     crawl._fill_facts_from_detail_pages(recs, {"key": "x", "name": "X"})
-    assert recs[0]["size_sf"] == 1500 and recs[0]["asking_rent"] == 95.0   # untouched
+
+    assert recs[0]["size_sf"] == 1500, "the feed already said 1,500 — do NOT overwrite it"
+    assert recs[0]["asking_rent"] == 1.0, "...but DO fill the gap the feed left"
 
 
 def test_a_rung_that_finds_no_size_and_no_ask_has_not_found_a_listing(monkeypatch, isolated_db):
@@ -822,3 +834,14 @@ def test_census_still_refuses_to_guess(monkeypatch, isolated_db):
     monkeypatch.setattr(crawl.registry, "parcel_provider", lambda metro: None)
     monkeypatch.setattr(census, "geocode", lambda addr: None)
     assert crawl._geocode("nowhere at all", "la") is None      # None, never 0/0
+
+
+def test_the_city_and_state_survive_the_merge_into_the_feed_and_jsonld_rungs():
+    """C4. `_FACT_KEYS` didn't carry geo_hint/geo_state, so when from_html_facts read
+    "Oxnard, CA" off a Rexford page, a listing that had arrived via the feed or via JSON-LD
+    LOST the city and the state: `_out_of_market` saw no state and could not reject it, and
+    the geocoder was handed a bare street name — the precise input the whole fix exists to
+    avoid. And neither key may reach the DB."""
+    from app.db import _LISTING_COLS
+    assert "geo_hint" in crawl._FACT_KEYS and "geo_state" in crawl._FACT_KEYS
+    assert "geo_hint" not in _LISTING_COLS and "geo_state" not in _LISTING_COLS

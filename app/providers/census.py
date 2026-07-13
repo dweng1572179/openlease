@@ -21,6 +21,7 @@ import re
 
 import httpx
 
+from . import addrmatch
 from ..cache import cached
 from ..config import settings
 
@@ -75,9 +76,9 @@ def geocode(address: str) -> dict | None:
 
     m = matches[0]
     matched = m.get("matchedAddress") or ""
-    want = _street_token(address)
-    if want and want not in [_norm(t) for t in _WORD.findall(matched.lower())]:
-        log.info("census: asked for %r, got %r — rejecting (wrong street)", address, matched)
+    if not addrmatch.matches(address, matched):
+        log.info("census: asked for %r, got %r — rejecting (not the address we asked for)",
+                 address, matched)
         return None
 
     c = m["coordinates"]

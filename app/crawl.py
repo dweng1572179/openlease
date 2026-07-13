@@ -494,8 +494,16 @@ def _place(d: dict, configured_metro: str) -> bool:
     return True
 
 
+# geo_hint and geo_state are HERE on purpose. They are what the out-of-market guard and the
+# geocoder run on, and leaving them out of the merge threw them away on exactly the two rungs
+# that need them most: when from_html_facts read "Oxnard, CA" off a Rexford page, a listing
+# that had arrived via the feed or via JSON-LD lost the city and the state, `_out_of_market`
+# saw no state and could not reject it, and the geocoder was handed a bare street name — the
+# precise input the whole fix exists to avoid.
+# (Neither key is in db._LISTING_COLS, so neither reaches the database.)
 _FACT_KEYS = ("size_sf", "asking_rent", "rent_unit", "property_type", "sale_price",
-              "transaction_type", "divisible_min_sf", "divisible_max_sf")
+              "transaction_type", "divisible_min_sf", "divisible_max_sf",
+              "geo_hint", "geo_state")
 
 
 def _fill_facts_from_detail_pages(recs: list[dict], src: dict) -> None:
@@ -526,6 +534,15 @@ def _fill_facts_from_detail_pages(recs: list[dict], src: dict) -> None:
             d.update(added)
             d["our_description"] = extract.describe(d)   # re-say it now that we know more
 
+        # The detail page may be the first thing that told us WHERE this is (the feed's slug
+        # doesn't always carry a state). If so, try again — and if it turns out to be in
+        # another market, mark it: the caller drops it.
+        if "geo_hint" in added and d.get("lat") is None:
+            _maybe_geocode(d)
+        if _out_of_market(d, d["metro"]) or (d.get("lat") is not None
+                                             and not _place(d, d["metro"])):
+            d["_drop"] = True
+
 
 def crawl_source(src: dict, metro: str, limit: int = 100) -> list[dict]:
     """Descend the ladder, stopping at the highest rung that produces listings."""
@@ -547,6 +564,9 @@ def crawl_source(src: dict, metro: str, limit: int = 100) -> list[dict]:
                         out.append(d)
             if out:
                 _fill_facts_from_detail_pages(out, src)
+                # the detail page can reveal a listing is out of market (a feed slug does
+                # not always carry a state) — drop those rather than file them here
+                out = [d for d in out if not d.pop("_drop", False)]
                 return out                      # the rung worked — do not descend
             log.info("%s: wp-json returned nothing usable, descending the ladder", src["key"])
 

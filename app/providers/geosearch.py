@@ -6,6 +6,7 @@ import re
 
 import httpx
 
+from . import addrmatch
 from ..cache import cached
 from ..config import settings
 
@@ -62,10 +63,10 @@ def geocode(address: str) -> dict | None:
     props = f.get("properties", {})
     label = props.get("label") or ""
 
-    want = _street_token(address)
-    if want and want not in [_norm(t) for t in _WORD.findall(label.lower())]:
+    if not addrmatch.matches(address, label):
         # It found *a* building, just not the one we asked for.
-        log.info("geosearch: asked for %r, got %r — rejecting (wrong street)", address, label)
+        log.info("geosearch: asked for %r, got %r — rejecting (not the address we asked for)",
+                 address, label)
         return None
 
     lng, lat = f["geometry"]["coordinates"]

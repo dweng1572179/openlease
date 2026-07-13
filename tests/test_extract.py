@@ -236,12 +236,15 @@ def test_an_address_with_no_facts_is_not_a_listing():
 
 
 def test_absurd_numbers_are_rejected_as_parse_artifacts():
-    """A phone number, a zip, a year — a page is full of digits. A size must carry a UNIT,
-    and it must be within human bounds."""
+    """A phone number, a zip, a year — a page is full of digits. A size must carry a UNIT
+    and be within human bounds. (`d is None or d["size_sf"] is None` asserted nothing: the
+    first branch is true whenever extraction gives up for ANY reason.)"""
     junk = ("<html><h1>1 Main Street</h1><p>Call 310-555-1212. Est. 1987. "
-            "Suite 4 SF. 99,999,999 SF campus.</p></html>")
-    d = extract.from_html_facts(junk, "https://x.test/listings/1", _SRC, "la")
-    assert d is None or d.get("size_sf") is None   # 4 SF and 99M SF are both out of bounds
+            "Suite 4 SF. 99,999,999 SF campus. Rent: $5/SF/yr.</p></html>")
+    d = extract.from_html_facts(junk, "https://x.test/listings/1", _SRC, "nyc")
+    assert d is not None, "the rent is real, so we DO get a listing"
+    assert d["asking_rent"] == 5.0
+    assert d.get("size_sf") is None, "4 SF and 99,999,999 SF are both out of human bounds"
 
 
 def test_the_city_comes_from_the_page_so_the_address_can_be_geocoded():
@@ -271,18 +274,18 @@ def test_a_market_statistic_never_becomes_an_asking_rent():
     page = ("Midtown asking rents held flat at $78.23/SF (Cushman & Wakefield, April 2026), "
             "with Class A at $85.28/SF and Class B at $77.55/SF. "
             "3,305 SF available on the partial 29th floor. 3,305 SF. 3,305 SF.")
-    assert extract._rent_of(page) is None, "four market figures — we must not pick one"
+    assert extract._rent_of(page, "nyc") is None, "four market figures — we must not pick one"
     assert extract._size_of(page) == 3305, "the size the page actually repeats"
 
 
 def test_a_labelled_rent_beats_a_market_number_on_the_same_page():
     page = "Asking Rent: $62/SF/yr. Midtown averaged $78.23/SF last quarter."
-    assert extract._rent_of(page) == (62.0, "sf_yr")
+    assert extract._rent_of(page, "nyc") == (62.0, "sf_yr")
 
 
 def test_one_unlabelled_rent_is_unambiguous_and_is_taken():
     """A page that quotes exactly one $/SF figure is telling you the ask."""
-    assert extract._rent_of("1,500 SF of ground-floor retail. $95/SF/yr.") == (95.0, "sf_yr")
+    assert extract._rent_of("1,500 SF of ground-floor retail. $95/SF/yr.", "nyc") == (95.0, "sf_yr")
 
 
 def test_a_size_filter_dropdown_never_becomes_a_size():
@@ -305,15 +308,16 @@ def test_the_property_type_is_the_one_the_page_talks_about():
 def test_every_decoy_a_real_broker_page_puts_next_to_the_rent():
     """These are the exact shapes on the pages we crawl. Each decoy sits right where a rent
     would, and each one was, at some point, stored as a listing's asking rent."""
-    R = extract._rent_of
+    def R(t, metro="nyc"):
+        return extract._rent_of(t, metro)
     # metro-manhattan: the real ask, and the three things around it
     assert R("Size: 3,305 SF Rent/SF: $ 60 Monthly Rent: $ 16,525") == (60.0, "sf_yr")
     assert R("Max Rent/Month Select all $5,000 $10,000 $15,000") is None       # a filter
     assert R("asking rents held flat at $78.23/SF (Cushman & Wakefield)") is None  # the market
     # westmac: the real ask, and the two things around it
-    assert R("540 Rose Avenue For Lease - $10.00/SF/Mo. NNN") == (10.0, "sf_mo")
-    assert R("Triple net charges +/-$1.41/SF/Mo.") is None                     # the NNN charge
-    assert R("Related Listings For Lease 1702 Lincoln Boulevard $4.50/SF/Mo.") is None
+    assert R("540 Rose Avenue For Lease - $10.00/SF/Mo. NNN", "la") == (10.0, "sf_mo")
+    assert R("Triple net charges +/-$1.41/SF/Mo.", "la") is None               # the NNN charge
+    assert R("Related Listings For Lease 1702 Lincoln Boulevard $4.50/SF/Mo.", "la") is None
     # ripco: no rent at all, and it says so
     assert R("Asking Rent Upon Request Asking Price $6,500,000") is None
 
@@ -321,7 +325,7 @@ def test_every_decoy_a_real_broker_page_puts_next_to_the_rent():
 def test_a_period_label_does_not_reach_across_into_the_next_one():
     """"Rent/SF: $60  Monthly Rent: $16,525" — reading "Monthly" as $60's period made it
     $60/SF/MO instead of $60/SF/YR. A 12x error, and entirely plausible."""
-    assert extract._rent_of("Rent/SF: $ 60 Monthly Rent: $ 16,525") == (60.0, "sf_yr")
+    assert extract._rent_of("Rent/SF: $ 60 Monthly Rent: $ 16,525", "nyc") == (60.0, "sf_yr")
     # (3,305 SF x $60/SF/yr = $16,525/month — the page is internally consistent.)
 
 
@@ -337,3 +341,61 @@ def test_an_asking_price_is_a_sale_not_a_rent():
     assert d["transaction_type"] == "sale"
     assert d["sale_price"] == 6_500_000
     assert d.get("asking_rent") is None
+
+
+# --- the review's Critical findings, each reproduced then closed ------------------------
+
+def test_the_buildings_footprint_never_becomes_the_suites_size():
+    """C1. "1250 Broadway is a 807,000 SF tower. This 3,305 SF suite is available." — both
+    numbers appear once, so "most repeated" had no winner and the code took document order:
+    the TOWER. It was in the database as the size of the suite. Now: nothing repeats and
+    more than one candidate => we cannot tell which, so we refuse."""
+    assert extract._size_of(
+        "1250 Broadway is a 807,000 SF tower. This 3,305 SF suite is available.") is None
+    # ...and when the listing does state its own size twice, we take it
+    assert extract._size_of(
+        "807,000 SF tower. This 3,305 SF suite. 3,305 SF available.") == 3305
+
+
+def test_an_unqualified_rate_is_never_silently_called_yearly():
+    """C2. The yearly and monthly bands OVERLAP at $5-$90/SF. LA and industrial quote per
+    MONTH. Defaulting a bare "$5.75/SF" to YEARLY turned a $69/SF/yr West LA office into a
+    $5.75/SF/yr bargain — a 12x error that surfaces in every "cheap space" search, and that
+    reads as a find rather than a fault."""
+    assert extract._rent_of("Rate: $5.75/SF NNN. Creative office.", "la") == (5.75, "sf_mo")
+    assert extract._rent_of("Rate: $5.75/SF NNN.", "nyc") == (5.75, "sf_yr")
+    assert extract._rent_of("Rate: $5.75/SF NNN.", "") is None      # unknown market: refuse
+    assert extract._rent_of("Rate: $2.10/SF", "", "industrial") == (2.10, "sf_mo")
+
+
+def test_a_size_dropdown_labelled_Size_is_still_a_dropdown():
+    """I1. The only defence was a hardcoded `(?<!filter by )`. Any site labelling its filter
+    "Size" walked straight back into the bug."""
+    assert extract._size_of("Size 1,000 SF 1,999 SF 4,999 SF 9,999 SF") is None
+    assert extract._size_of("Size: 3,305 SF") == 3305               # a real label still works
+
+
+def test_a_date_is_not_a_size():
+    """I2. The size label's UNIT had been made optional, so "Availability: 2026" became a
+    2,026 SF listing."""
+    assert extract._size_of("Availability: 2026") is None
+
+
+def test_the_sites_own_nav_does_not_retype_a_lease_as_a_sale():
+    """I3. Every one of these sites has "Properties For Sale" in its header menu, and
+    `page_text` strips <nav>/<footer> but not <header>. A lease listing retyped `sale` is
+    invisible to every lease search."""
+    html = ('<html><header><ul><li>Properties For Sale</li></ul></header>'
+            '<h1>1225 Lincoln Rd</h1><p>For Lease. Size: 2,400 SF. Rent: $95/SF/yr.</p></html>')
+    d = extract.from_html_facts(html, "https://x.test/listings/1225", _SRC, "mia")
+    assert d["transaction_type"] == "lease"
+
+
+def test_the_brokers_headline_never_becomes_the_address():
+    """I5. `_headline` split on pipes and en-dashes but not a plain hyphen, so
+    "<title>280 Broadway - Ground Floor Retail!! - Prime Corner</title>" was stored in a FACT
+    field — and persisted the broker's own marketing copy, which we never store."""
+    assert extract._headline(
+        "<title>540 Rose Avenue - WESTMAC Commercial Brokerage</title>") == "540 Rose Avenue"
+    assert extract._headline(
+        "<title>280 Broadway - Ground Floor Retail!! - Prime Corner</title>") == "280 Broadway"
