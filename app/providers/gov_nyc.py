@@ -21,24 +21,57 @@ docs/implementation-plan.md Task 11 correction for the full write-up):
      the borough/block/lot -> document_id join; `bnx9-e6tj` holds
      document_id -> doc_type/amount/date. A BBL-to-signal lookup needs both, in sequence.
 """
+import logging
+
 import httpx
 
 from ..cache import cached
+
+log = logging.getLogger("openlease")
 
 STOREFRONT = "https://data.cityofnewyork.us/resource/92iy-9c3n.json"
 ACRIS_LEGALS = "https://data.cityofnewyork.us/resource/8h5j-fqxa.json"   # bbl -> document_id
 ACRIS = "https://data.cityofnewyork.us/resource/bnx9-e6tj.json"          # document_id -> doc
 
 
-def storefronts(limit: int = 1000, vacant_only: bool = True) -> list[dict]:
-    """Vacant storefronts as Listing dicts. `source_url` points at the city's own record
-    for the BBL, so the row is traceable and we invent nothing."""
+PAGE = 5000        # Socrata serves this comfortably; 43,978 rows is 9 pages
+
+
+def storefronts(limit: int = 50_000, vacant_only: bool = True) -> list[dict]:
+    """Every vacant storefront the City publishes, as Listing dicts.
+
+    Two things were quietly costing us most of this feed.
+
+    The default limit was 500 — of 43,978. The registry is the single largest supply of
+    NYC ground-floor retail in existence, it is published by the city, and no broker site
+    has it. Stopping at 500 made the app look shallow for no reason at all.
+
+    And `source_url` was keyed on the BBL alone. A BBL is a TAX LOT — one building — so a
+    building with six vacant storefronts collapsed into ONE row on upsert, and we silently
+    lost ~30% of every page we did fetch (500 fetched -> 350 saved). Socrata's `:id` is a
+    stable per-ROW key, which is what a storefront actually is.
+    """
     where = "vacant_on_12_31='YES'" if vacant_only else "1=1"
 
     def fetch():
-        r = httpx.get(STOREFRONT, params={"$where": where, "$limit": limit}, timeout=60.0)
-        r.raise_for_status()
-        return r.json()
+        got: list[dict] = []
+        while len(got) < limit:
+            page = min(PAGE, limit - len(got))
+            r = httpx.get(STOREFRONT, params={
+                "$select": ":id,bbl,borough,latitude,longitude,property_street_address_or,"
+                           "property_number,property_street,primary_business_activity",
+                "$where": where, "$limit": page, "$offset": len(got),
+                "$order": ":id",     # a stable order, or paging can repeat and skip rows
+            }, timeout=120.0)
+            r.raise_for_status()
+            batch = r.json()
+            if not batch:
+                break
+            got.extend(batch)
+            log.info("nyc storefronts: %d fetched", len(got))
+            if len(batch) < page:
+                break            # short page = the end of the registry
+        return got
 
     rows = cached("nyc_storefront", "query", {"where": where, "limit": limit}, fetch)
     out = []
@@ -51,7 +84,10 @@ def storefronts(limit: int = 1000, vacant_only: bool = True) -> list[dict]:
             continue
         out.append({
             "source": "nyc_storefront",
-            "source_url": f"https://data.cityofnewyork.us/resource/92iy-9c3n.json?bbl={bbl}",
+            # Keyed on the ROW, not the BBL: six vacant storefronts in one building are six
+            # storefronts, and upserting them onto one tax-lot URL threw five of them away.
+            "source_url": (f"https://data.cityofnewyork.us/resource/92iy-9c3n.json"
+                           f"?$where=:id='{r.get(':id')}'"),
             "metro": "nyc",
             "status": "available",
             "address": addr,
