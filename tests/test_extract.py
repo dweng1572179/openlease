@@ -861,3 +861,32 @@ def test_the_narrowed_lease_context_still_frees_a_whole_building_lease():
         "Asking Rent: $1.50/SF/Mo.",
         "https://x.com/listings/1234-warehouse-way", SRC, "la")
     assert d["size_sf"] == 25000
+
+
+def test_a_parcel_is_not_leasable_space():
+    """"Site Size: 43,560 SF" is one acre of DIRT. Dropping "site" from the decoys outright
+    published the parcel as leasable space; keeping it outright would have eaten "Total Size".
+    Like min/max, it is a decoy only when what FOLLOWS says it measures the ground."""
+    assert extract._size_of(
+        "2732 East 15th Street. Site Size: 43,560 SF. Industrial land for lease.") is None
+    assert extract._size_of("Total Size: 2,400 SF of retail.") == 2400   # still reads
+
+
+def test_the_divisible_range_is_not_overwritten_by_the_rent():
+    """Both are tails, and the rent used to OVERWRITE the range — so the fact we added it for
+    only ever appeared on listings with no ask, which is almost never the multi-tenant
+    buildings it was written for."""
+    s = extract.describe({"address": "90 Broad St", "property_type": "retail", "size_sf": 2769,
+                          "divisible_min_sf": 1608, "divisible_max_sf": 2769,
+                          "asking_rent": 60.0, "rent_unit": "sf_yr"})
+    assert "divisible 1,608-2,769 SF" in s and "$60/SF/yr" in s
+
+
+def test_a_feed_price_that_states_its_own_unit_is_believed():
+    """An isdigit() gate threw away every FORMATTED price — including "$2.25/SF/Mo", which
+    states its own unit and is the one case we never have to guess about."""
+    assert extract._feed_rent("$2.25/SF/Mo", "la", "industrial") == \
+        {"asking_rent": 2.25, "rent_unit": "sf_mo"}
+    assert extract._feed_rent("58", "chi", "office") == {"asking_rent": 58.0, "rent_unit": "sf_yr"}
+    # ...and a sale-sized number still yields no rent at all
+    assert extract._feed_rent("6500000", "nyc", "office") == {}

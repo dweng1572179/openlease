@@ -470,10 +470,22 @@ def _feed_rent(price, metro: str = "", ptype: str = "") -> dict:
     that decides, and it refuses when it cannot tell; refusing leaves the rent absent, which
     the UI renders honestly, instead of confidently wrong.
     """
-    if price is None or not str(price).replace(".", "").replace(",", "").isdigit():
+    if price is None:
         return {}
-    val = float(str(price).replace(",", ""))
-    unit = _unit_for(val, "", metro, ptype)     # no period stated: the feed gave us a number
+    raw = str(price)
+    m = re.search(r"([\d][\d,]*\.?\d*)", raw)
+    if not m:
+        return {}
+    val = float(m.group(1).replace(",", ""))
+    # An isdigit() gate threw away every FORMATTED price — including "$2.25/SF/Mo", which
+    # STATES its own unit and is the one case we never have to guess about. Read the period
+    # the feed gave us; fall back to _unit_for only when it gave us none.
+    period = ""
+    if re.search(r"/\s*sf\s*/?\s*mo|per\s+sf\s+per\s+month|/\s*mo\b", raw, re.I):
+        period = "mo"
+    elif re.search(r"/\s*sf\s*/?\s*(?:yr|year)|per\s+sf\s+per\s+year|/\s*yr\b", raw, re.I):
+        period = "yr"
+    unit = _unit_for(val, period, metro, ptype)
     return {"asking_rent": val, "rent_unit": unit} if unit else {}
 
 
@@ -509,7 +521,11 @@ _SIZE_LABEL = re.compile(
 # (s != building), which is the guard that actually knows which number the building is.
 _SIZE_DECOY = re.compile(
     r"\b(?:building|typical\s+floor|floor\s+plate|floorplate|lot|land)\b"
-    r"|\b(?:min|max)(?:imum)?\s+(?:size|sf|sq)", re.I)
+    r"|\b(?:min|max)(?:imum)?\s+(?:size|sf|sq)"
+    # "Site Size: 43,560 SF" is one acre of DIRT. Dropping "site" outright published the
+    # parcel as leasable space; keeping it outright would have eaten "Total Size". Like
+    # min/max, it is a decoy only when what FOLLOWS says it measures the ground.
+    r"|\bsite\s+(?:size|area)", re.I)
 _SIZE_DECOY_WINDOW = 22
 
 
@@ -1057,12 +1073,16 @@ def describe(d: dict) -> str:
     if d.get("neighborhood"):
         bits.append(f"in {d['neighborhood']}")
     tail = ""
+    # The divisible range and the rent are BOTH tails, and the rent used to overwrite the
+    # range — so the fact we added it for only ever appeared on listings with no ask, which
+    # is almost never the multi-tenant buildings it was written for. They concatenate.
+    divisible = ""
     lo, hi = d.get("divisible_min_sf"), d.get("divisible_max_sf")
     if lo and hi and lo != hi:
         # The single most useful fact about a multi-tenant building, and we were storing
         # it and saying nothing: a tenant who needs 1,600 SF cares that a 2,769 SF listing
         # divides down to it.
-        tail = f", divisible {lo:,}-{hi:,} SF"
+        divisible = f", divisible {lo:,}-{hi:,} SF"
     if d.get("asking_rent"):
         # Say the unit the listing actually quotes. LA and industrial quote $/SF/MONTH:
         # rendering $3.20/SF/mo as "$3/SF/yr" is off by 12x AND rounds the cents away,
@@ -1084,4 +1104,4 @@ def describe(d: dict) -> str:
     # has no case to change).
     if sentence:
         sentence = sentence[0].upper() + sentence[1:]
-    return f"{sentence} at {d['address']}{tail}."
+    return f"{sentence} at {d['address']}{divisible}{tail}."
