@@ -347,14 +347,31 @@ def _headline(html: str) -> str | None:
 # a wrong rent is worse than no rent, and a search that filters on a fabricated number is
 # worse than one that filters on nothing.
 _RENT_LABEL = re.compile(
-    r"(?:asking\s+rent|asking\s+price|rent|rate|price|ask)\s*[:\-–]?\s*"
-    r"\$\s?([\d][\d,]*\.?\d*)\s*(?:/|\s+per\s+)?\s*"
-    r"(sf|sq\.?\s?ft|square\s+foot|mo\b|month)?\s*/?\s*(yr|year|mo\b|month)?", re.I)
-# "(?<!filter by )" — "Filter by size: 1,000 SF" is a DROPDOWN, not this listing's size.
+    r"(?:asking\s+rent|rent\s*/\s*sf|rent\s+per\s+sf|monthly\s+rent|asking\s+price"
+    r"|asking|rent|rate|price)\s*[:\-\u2013/]*\s*"
+    r"\$\s?([\d][\d,]*\.?\d*)\s*"
+    r"(?:\s*/\s*|\s+per\s+)?(sf|sq\.?\s?ft)?(?:\s*/\s*(mo\b|month|yr\b|year))?",
+    re.I)
+
+# The page's OWN decoys, all seen live. Each one sits right where a rent would:
+#   "Max Rent/Month  $5,000 $10,000 $15,000"   a filter dropdown (metro-manhattan)
+#   "Triple net charges ±$1.41/SF/Mo."         the NNN charge, NOT the rent (westmac)
+#   "Related Listings ... $4.50/SF/Mo."        a DIFFERENT building (westmac)
+#   "asking rents held flat at $78.23/SF"      a market statistic (metro-manhattan)
+_RENT_DECOY = re.compile(
+    r"max\s+rent|min\s+rent|triple\s+net|nnn\s+charge|cam\s+charge|filter"
+    r"|related\s+listing|similar|nearby|market|average|comparable|held\s+flat", re.I)
+_DECOY_WINDOW = 60          # chars of run-up to check for a decoy word
+
+
+def _decoyed(text: str, at: int) -> bool:
+    return bool(_RENT_DECOY.search(text[max(0, at - _DECOY_WINDOW):at]))
+
+
 _SIZE_LABEL = re.compile(
     r"(?<!filter by )(?:size|space available|availability|sf\s+available|square\s+footage"
-    r"|divisible)\s*[:\-–]?\s*([\d][\d,]{1,8})\s*(?:\+/-\s*)?"
-    r"(?:SF\b|sq\.?\s?ft|square\s+feet)", re.I)
+    r"|square\s+feet|divisible)\s*[:\-\u2013]?\s*([\d][\d,]{1,8})\s*(?:\+/-\s*)?"
+    r"(?:SF\b|sq\.?\s?ft|square\s+feet)?", re.I)
 
 
 def _size_of(text: str) -> int | None:
@@ -379,32 +396,82 @@ def _size_of(text: str) -> int | None:
 
 
 def _rent_of(text: str) -> tuple[float, str] | None:
-    """This listing's ask, and the unit it is quoted in. LABELLED ONLY — see the note above.
-    LA and industrial quote $/SF/MONTH; everyone else quotes $/SF/YEAR; some quote a gross
-    monthly figure. The page says which."""
+    """This listing's ask, and the unit it is quoted in.
+
+    Every real broker page we crawl puts the rent behind a label and surrounds it with
+    decoys, all of which are shaped exactly like a rent:
+
+      metro-manhattan  "Size: 3,305 SF  Rent/SF: $60  Monthly Rent: $16,525"   <- the ask
+                       "Max Rent/Month  $5,000 $10,000 $15,000 $20,000"        <- a filter
+                       "asking rents held flat at $78.23/SF (Cushman)"         <- the market
+      westmac          "540 Rose Avenue For Lease - $10.00/SF/Mo. NNN"         <- the ask
+                       "Triple net charges +/-$1.41/SF/Mo."                    <- the NNN charge
+                       "Related Listings ... 1702 Lincoln Blvd $4.50/SF/Mo."   <- another building
+      ripco            "Asking Rent Upon Request"                              <- no rent, honestly
+
+    (3,305 SF x $60/SF/yr = $16,525/month. The page is internally consistent; the naive
+    reader is not.)
+
+    So: take a LABELLED figure that isn't preceded by a decoy word. Failing that, take an
+    unlabelled one only if the page quotes exactly one $/SF figure. Otherwise refuse — a
+    wrong rent is worse than no rent.
+    """
+    per_sf_hits: list[tuple[float, str]] = []
+    gross_hits: list[float] = []
+
     for m in _RENT_LABEL.finditer(text):
+        if _decoyed(text, m.start()):
+            continue
         val = _num(m.group(1))
-        per_sf = bool(m.group(2) and not re.fullmatch(r"mo\b|month", m.group(2), re.I))
-        period = (m.group(3) or (m.group(2) if not per_sf else "") or "").lower()
-        monthly = period.startswith("mo") or period.startswith("month")
+        per_sf = bool(m.group(2)) or bool(re.search(r"rent\s*/\s*sf|rent\s+per\s+sf",
+                                                    m.group(0), re.I))
+        period = (m.group(3) or "").lower()
+        monthly = period.startswith("mo")
+
         if per_sf:
             if monthly and _MIN_SF_MO <= val <= _MAX_SF_MO:
-                return val, "sf_mo"
-            if not monthly and _MIN_SF_YR <= val <= _MAX_SF_YR:
-                return val, "sf_yr"
-        elif monthly and val >= 500:            # a gross monthly rent
-            return val, "mo"
+                per_sf_hits.append((val, "sf_mo"))
+            elif not monthly and _MIN_SF_YR <= val <= _MAX_SF_YR:
+                per_sf_hits.append((val, "sf_yr"))
+        elif val >= 500:
+            # A gross figure. "Monthly Rent: $16,525" is a rent; "Asking Price $6,500,000"
+            # is a SALE and is handled separately — never as a rent.
+            if re.search(r"monthly\s+rent|rent\s*/\s*month|per\s+month", m.group(0), re.I) \
+                    or monthly:
+                gross_hits.append(val)
 
-    # No label. Accept an unlabelled rent ONLY when the page quotes exactly one — then it is
-    # unambiguous. Metro Manhattan's pages quote four ($78.23 and $77.55 market averages,
-    # $85.28, $320) and none of them is the listing's ask; a page with a single $/SF figure
-    # is telling you the ask. More than one, and we do not guess.
-    mo = [v for v in (_num(r) for r in _RENT_SF_MO.findall(text)) if _MIN_SF_MO <= v <= _MAX_SF_MO]
-    yr = [v for v in (_num(r) for r in _RENT_SF.findall(text)) if _MIN_SF_YR <= v <= _MAX_SF_YR]
+    if per_sf_hits:
+        return per_sf_hits[0]            # the per-SF ask is the one a broker filters on
+    if gross_hits:
+        return gross_hits[0], "mo"
+
+    # Nothing labelled. An unlabelled figure is only safe when it is the ONLY one on the
+    # page AND nothing decoy-shaped introduces it.
+    mo = [_num(m.group(1)) for m in _RENT_SF_MO.finditer(text)
+          if not _decoyed(text, m.start()) and _MIN_SF_MO <= _num(m.group(1)) <= _MAX_SF_MO]
+    yr = [_num(m.group(1)) for m in _RENT_SF.finditer(text)
+          if not _decoyed(text, m.start()) and _MIN_SF_YR <= _num(m.group(1)) <= _MAX_SF_YR]
     if len(set(mo)) == 1:
         return mo[0], "sf_mo"
     if not mo and len(set(yr)) == 1:
         return yr[0], "sf_yr"
+    return None
+
+
+_SALE_LABEL = re.compile(
+    r"(?:asking\s+price|sale\s+price|offered\s+at|price)\s*[:\-\u2013]?\s*"
+    r"\$\s?([\d][\d,]{5,})", re.I)
+
+
+def _sale_of(text: str) -> int | None:
+    """RIPCO says "Asking Rent Upon Request" and "Asking Price $6,500,000" on the same page:
+    it is FOR SALE, and refusing the rent (correctly) left us with nothing at all."""
+    for m in _SALE_LABEL.finditer(text):
+        if _decoyed(text, m.start()):
+            continue
+        val = _num(m.group(1))
+        if 50_000 <= val <= 5_000_000_000:
+            return int(val)
     return None
 
 
@@ -454,11 +521,15 @@ def from_html_facts(html: str, url: str, src: dict, metro: str) -> dict | None:
     if counts[best]:
         d["property_type"] = best
 
-    if re.search(r"\bfor\s+sale\b", txt, re.I) and not d.get("asking_rent"):
-        d["transaction_type"] = "sale"
-        sale = [_num(s) for s in _SALE.findall(txt)]
-        if sale:
-            d["sale_price"] = int(min(sale))
+    # A sale, not a lease. RIPCO's 57 West 38th St says "Asking Rent Upon Request" and
+    # "Asking Price $6,500,000" on the same page: correctly refusing the rent left us with
+    # nothing at all, when the page was telling us plainly what it was.
+    if not d.get("asking_rent"):
+        price = _sale_of(txt)
+        if price or re.search(r"\bfor\s+sale\b", txt, re.I):
+            d["transaction_type"] = "sale"
+        if price:
+            d["sale_price"] = price
 
     # An address alone is not a listing — the hard filter runs on SF and rent.
     if not (d.get("size_sf") or d.get("asking_rent") or d.get("sale_price")):

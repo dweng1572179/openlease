@@ -300,3 +300,40 @@ def test_the_property_type_is_the_one_the_page_talks_about():
         "<html><h1>122 East 42nd Street</h1><p>Size: 825 SF. " + page + "</p></html>",
         "https://x.test/listings/122-east-42nd", _SRC, "nyc")
     assert d["property_type"] == "office"
+
+
+def test_every_decoy_a_real_broker_page_puts_next_to_the_rent():
+    """These are the exact shapes on the pages we crawl. Each decoy sits right where a rent
+    would, and each one was, at some point, stored as a listing's asking rent."""
+    R = extract._rent_of
+    # metro-manhattan: the real ask, and the three things around it
+    assert R("Size: 3,305 SF Rent/SF: $ 60 Monthly Rent: $ 16,525") == (60.0, "sf_yr")
+    assert R("Max Rent/Month Select all $5,000 $10,000 $15,000") is None       # a filter
+    assert R("asking rents held flat at $78.23/SF (Cushman & Wakefield)") is None  # the market
+    # westmac: the real ask, and the two things around it
+    assert R("540 Rose Avenue For Lease - $10.00/SF/Mo. NNN") == (10.0, "sf_mo")
+    assert R("Triple net charges +/-$1.41/SF/Mo.") is None                     # the NNN charge
+    assert R("Related Listings For Lease 1702 Lincoln Boulevard $4.50/SF/Mo.") is None
+    # ripco: no rent at all, and it says so
+    assert R("Asking Rent Upon Request Asking Price $6,500,000") is None
+
+
+def test_a_period_label_does_not_reach_across_into_the_next_one():
+    """"Rent/SF: $60  Monthly Rent: $16,525" — reading "Monthly" as $60's period made it
+    $60/SF/MO instead of $60/SF/YR. A 12x error, and entirely plausible."""
+    assert extract._rent_of("Rent/SF: $ 60 Monthly Rent: $ 16,525") == (60.0, "sf_yr")
+    # (3,305 SF x $60/SF/yr = $16,525/month — the page is internally consistent.)
+
+
+def test_an_asking_price_is_a_sale_not_a_rent():
+    """RIPCO's 57 West 38th St says "Asking Rent Upon Request" AND "Asking Price
+    $6,500,000". Correctly refusing the rent left us with nothing, when the page was
+    telling us plainly what it was."""
+    assert extract._sale_of("Asking Rent Upon Request Asking Price $6,500,000") == 6_500_000
+    d = extract.from_html_facts(
+        "<html><h1>57 West 38th Street</h1><p>9,470 SF. Asking Rent Upon Request. "
+        "Asking Price $6,500,000.</p></html>",
+        "https://www.ripcony.com/property-listings/57-west-38th-street/", _SRC, "nyc")
+    assert d["transaction_type"] == "sale"
+    assert d["sale_price"] == 6_500_000
+    assert d.get("asking_rent") is None
