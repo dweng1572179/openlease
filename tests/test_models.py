@@ -47,7 +47,7 @@ def test_upsert_and_api_shape():
     rid = row["id"]
 
     # a thinner re-crawl must not null out a good value (COALESCE guard)
-    db.save_listing({"source_url": "seed://mia/1", "metro": "mia", "address": row["address"]})
+    db.save_listing({"source": "test", "source_url": "seed://mia/1", "metro": "mia", "address": row["address"]})
     assert db.get_listing(rid)["size_sf"] == 1500
 
     api = to_api(db.get_listing(rid))
@@ -61,7 +61,7 @@ def test_upsert_and_api_shape():
 
     # photos are the BROKER's own URLs, hot-linked — stored verbatim, never re-hosted
     broker_pics = ["https://cdn.example-broker.com/a.jpg", "https://cdn.example-broker.com/b.jpg"]
-    db.save_listing({
+    db.save_listing({"source": "test", 
         "source_url": "seed://mia/1", "metro": "mia", "address": row["address"],
         "photo_urls_json": json.dumps(broker_pics),
         "score_breakdown_json": json.dumps({"grocery": 3.0, "restaurants": 2.1}),

@@ -33,14 +33,14 @@ def test_hard_filter_is_hard(client):
     q = ListingQuery(property_types=["retail"], max_rent_per_sf_yr=10)
     assert db.filter_listings(q, "mia") == []
     # a listing with no ask survives a rent cap (we don't punish missing data)
-    db.save_listing(dict(metro="mia", source_url="t://noask", address="9 No Ask Ave",
+    db.save_listing(dict(source="test", metro="mia", source_url="t://noask", address="9 No Ask Ave",
                          property_type="retail", size_sf=1500, neighborhood="Wynwood"))
     assert [r["source_url"] for r in db.filter_listings(q, "mia")] == ["t://noask"]
 
 
 def test_rent_unit_normalization(client):
     # $6/SF/MO is $72/SF/YR — it must fail a $64 cap, not pass it
-    db.save_listing(dict(metro="chi", source_url="t://permo", address="1 Monthly St",
+    db.save_listing(dict(source="test", metro="chi", source_url="t://permo", address="1 Monthly St",
                          property_type="office", size_sf=1000, asking_rent=6, rent_unit="sf_mo"))
     q = ListingQuery(property_types=["office"], max_rent_per_sf_yr=64)
     assert "t://permo" not in [r["source_url"] for r in db.filter_listings(q, "chi")]

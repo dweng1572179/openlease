@@ -69,7 +69,7 @@ def test_listing_page_links_real_broker_source_url(monkeypatch):
     with TestClient(app, follow_redirects=False) as c:
         db.init_db()
         c.post("/login", data={"password": "test-pw"})
-        lid = db.save_listing(dict(
+        lid = db.save_listing(dict(source="test", 
             metro="mia", source_url="https://broker.example.com/listings/42",
             address="42 Real Broker Ave, Miami, FL", property_type="retail", size_sf=1000,
             our_description="Ground-floor retail near the broker's own listing page.",
@@ -254,7 +254,7 @@ def test_the_listing_page_shows_the_evidence_behind_the_scores(monkeypatch):
 
     with TestClient(app, follow_redirects=False) as c:
         c.post("/login", data={"password": "test-pw"})
-        lid = db.save_listing(dict(source_url="t://evidence", metro="nyc",
+        lid = db.save_listing(dict(source="test", source_url="t://evidence", metro="nyc",
                                    address="350 5th Ave", lat=40.7484, lng=-73.9857,
                                    walk_score=100, transit_score=100))
         with db.get_conn() as conn:

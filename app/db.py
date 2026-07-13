@@ -211,7 +211,19 @@ _SQL_DEFAULTS = {"status": "'available'", "transaction_type": "'lease'"}
 
 def save_listing(rec: dict) -> int:
     """Upsert a normalized listing dict; return its row id. A re-crawl of the same
-    source_url refreshes the row and bumps last_seen (that's the recrawl signal)."""
+    source_url refreshes the row and bumps last_seen (that's the recrawl signal).
+
+    A listing MUST name its source and link back to the page it came from. Those two are the
+    whole provenance story — `source_url` is how a user checks what we say against what the
+    broker says, and `source` is how a bad extractor's output gets found and purged. Without
+    them a row is unattributable and un-deletable, and rows with a NULL source have twice now
+    appeared in the real database from stray scripts run against the default db_path. This
+    refuses them at the door rather than leaving them to be noticed in a corpus sweep.
+    """
+    if not rec.get("source") or not rec.get("source_url"):
+        raise ValueError(
+            f"a listing must have a source and a source_url — got source={rec.get('source')!r}, "
+            f"source_url={rec.get('source_url')!r} for address={rec.get('address')!r}")
     row = {k: rec.get(k) for k in _LISTING_COLS}
     for k in _JSON_FIELDS:
         if isinstance(row.get(k), (list, dict)):

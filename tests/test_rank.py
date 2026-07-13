@@ -26,7 +26,7 @@ def _setup():
         ("b", "Warehouse industrial space with dock loading"),
         ("c", "Wynwood retail retail retail gallery storefront"),
     ]:
-        ids[slug] = db.save_listing(dict(
+        ids[slug] = db.save_listing(dict(source="test", 
             metro="mia", source_url=f"t://{slug}", address=f"{slug} Test St",
             neighborhood="Wynwood" if slug != "b" else "Doral",
             property_type="retail" if slug != "b" else "industrial",
