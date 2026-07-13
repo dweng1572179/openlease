@@ -123,7 +123,7 @@ def test_sources_yml_has_no_login_or_credential_fields():
 def test_sources_yml_rungs_are_one_of_the_three_implemented():
     for metro_sources in crawl.SOURCES.values():
         for src in metro_sources:
-            assert src["rung"] in ("feed_wp", "jsonld", "html"), src
+            assert src["rung"] in ("feed_wp", "jsonld", "html", "nextdata"), src
 
 
 def test_api_crawl_and_sources_require_auth():

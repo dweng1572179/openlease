@@ -890,3 +890,62 @@ def test_a_feed_price_that_states_its_own_unit_is_believed():
     assert extract._feed_rent("58", "chi", "office") == {"asking_rent": 58.0, "rent_unit": "sf_yr"}
     # ...and a sale-sized number still yields no rent at all
     assert extract._feed_rent("6500000", "nyc", "office") == {}
+
+
+# --- rung 3d: __NEXT_DATA__ / Apollo state ------------------------------------
+
+_NEXT = """<script id="__NEXT_DATA__" type="application/json">
+{"props":{"pageProps":{"__APOLLO_STATE__":{
+ "Building:1":{"__typename":"Building","id":"1","address":"230 Park Avenue",
+               "slug":"/ny/new-york/230-park-avenue",
+               "listings":[{"__ref":"Listing:10"},{"__ref":"Listing:11"},{"__ref":"Listing:12"},
+                           {"__ref":"Listing:13"}]},
+ "Building:2":{"__typename":"Building","id":"2","address":"999 Nearby Plaza",
+               "slug":"/ny/new-york/999-nearby-plaza","listings":[{"__ref":"Listing:99"}]},
+ "Listing:10":{"__typename":"Listing","id":"10","status":"AVAILABLE","squareFeet":10862,
+               "floorAndSuite":"19th Floor","displayPSF":"~$65","estimatedPsf":65,
+               "accuratePsf":0,"details":{"Property Type":"Office"}},
+ "Listing:11":{"__typename":"Listing","id":"11","status":"AVAILABLE","squareFeet":5438,
+               "floorAndSuite":"4th Floor","displayPSF":"~$65","estimatedPsf":65},
+ "Listing:12":{"__typename":"Listing","id":"12","status":"UNAVAILABLE","squareFeet":22087,
+               "floorAndSuite":"31st Floor"},
+ "Listing:13":{"__typename":"Listing","id":"13","status":"AVAILABLE","squareFeet":0,
+               "floorAndSuite":"Executive Suites Space"},
+ "Listing:99":{"__typename":"Listing","id":"99","status":"AVAILABLE","squareFeet":7777}
+}}}}</script>"""
+
+_URL = "https://www.squarefoot.com/building/ny/new-york/230-park-avenue"
+
+
+def test_next_data_emits_one_row_per_suite():
+    """A building page carries every SUITE in the building, and a suite is what a tenant
+    rents. Emit one row per building and 86 of 87 suites vanish on upsert — the BBL bug
+    again."""
+    rows = extract.from_next_data(_NEXT, _URL, SRC, "nyc")
+    assert len(rows) == 2, f"expected 2 available, sized suites; got {len(rows)}"
+    assert {r["size_sf"] for r in rows} == {10862, 5438}
+    assert len({r["source_url"] for r in rows}) == 2, "suites collapsed onto one source_url"
+
+
+def test_next_data_refuses_an_estimated_rent():
+    """Every suite in the building shows the SAME "~$65", with accuratePsf=0 and
+    estimatedPsf=65. That is SquareFoot's MODEL ESTIMATE — tilde and all — not a landlord's
+    ask. Storing it is this project's very first bug reproduced at scale: a market average
+    stamped onto every listing."""
+    for r in extract.from_next_data(_NEXT, _URL, SRC, "nyc"):
+        assert not r.get("asking_rent"), "stored an aggregator's estimate as an asking rent"
+        assert "65" not in (r.get("our_description") or "")
+
+
+def test_next_data_skips_unavailable_and_sizeless_suites():
+    rows = extract.from_next_data(_NEXT, _URL, SRC, "nyc")
+    assert 22087 not in {r["size_sf"] for r in rows}, "imported an UNAVAILABLE suite"
+    assert all(r["size_sf"] > 0 for r in rows), "imported a suite with no stated size"
+
+
+def test_next_data_takes_only_this_pages_building():
+    """The page also carries every NEARBY building it links to. Take them and the whole
+    neighbourhood gets filed under one address."""
+    rows = extract.from_next_data(_NEXT, _URL, SRC, "nyc")
+    assert all(r["address"] == "230 Park Avenue" for r in rows)
+    assert 7777 not in {r["size_sf"] for r in rows}, "imported a neighbouring building's suite"

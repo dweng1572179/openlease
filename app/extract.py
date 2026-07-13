@@ -1105,3 +1105,70 @@ def describe(d: dict) -> str:
     if sentence:
         sentence = sentence[0].upper() + sentence[1:]
     return f"{sentence} at {d['address']}{divisible}{tail}."
+
+
+# --- rung 3d: __NEXT_DATA__ / Apollo state (a Next.js site's own embedded JSON) ----------
+#
+# Some sites render nothing server-side and ship their entire dataset in a
+# <script id="__NEXT_DATA__"> blob instead. That is not a scraping obstacle — it is a JSON
+# feed with extra steps, and reading it needs no CSS selector, no headless browser and no
+# per-site parser: the shape (props.pageProps.__APOLLO_STATE__, normalized by "Type:id") is
+# Apollo's, not any one site's.
+#
+# ONE PAGE, MANY LISTINGS. A building page carries every SUITE in the building, and a suite
+# is what a tenant rents. So this rung returns a LIST, and each suite gets its own
+# source_url (#listing-<id>) — otherwise 87 available suites upsert onto one building row
+# and 86 of them vanish, which is the BBL bug all over again.
+
+_NEXT_DATA = re.compile(
+    r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.S | re.I)
+
+
+def from_next_data(html: str, url: str, src: dict, metro: str) -> list[dict]:
+    m = _NEXT_DATA.search(html)
+    if not m:
+        return []
+    try:
+        state = (json.loads(m.group(1)).get("props", {})
+                 .get("pageProps", {}).get("__APOLLO_STATE__") or {})
+    except (json.JSONDecodeError, AttributeError):
+        return []
+    if not state:
+        return []
+
+    # The page carries its OWN building plus every nearby one it links to. Take only the
+    # building this URL is about, or we file the whole neighbourhood under one address.
+    path = re.sub(r"^.*?//[^/]+/building", "", url).rstrip("/")
+    here = next((v for v in state.values()
+                 if v.get("__typename") == "Building"
+                 and (v.get("slug") or "").rstrip("/") == path), None)
+    if not here or not here.get("address"):
+        return []
+
+    out: list[dict] = []
+    for ref in (here.get("listings") or []):
+        li = state.get(ref.get("__ref") if isinstance(ref, dict) else ref) or {}
+        if li.get("status") != "AVAILABLE":
+            continue                      # UNAVAILABLE / OFFERS_IN — the deal is done
+        sf = li.get("squareFeet") or li.get("estimatedSquareFeet") or 0
+        if not (_MIN_SF <= float(sf or 0) <= _MAX_SF):
+            continue                      # 0 SF = an "executive suite" with no stated size
+        d = {
+            "address": here["address"],
+            "size_sf": int(sf),
+            "floor": li.get("floorAndSuite") or None,
+            "property_type": str((li.get("details") or {}).get("Property Type") or "").lower(),
+            "lease_type": (li.get("details") or {}).get("Lease Type") or None,
+            # NO RENT. displayPSF is "~$65" — a tilde, an ESTIMATE, and the SAME estimate on
+            # every suite in the building (accuratePsf=0, estimatedPsf=65). Storing it as an
+            # asking rent would be this project's very first bug reproduced at scale: a
+            # market average stamped onto every listing. Their size is a fact; their price
+            # is a model's opinion. We take the fact.
+        }
+        d = {k: v for k, v in d.items() if v}
+        # one row per SUITE, or 87 suites upsert onto one building and 86 disappear
+        d = _clean(d, src, f"{url}#listing-{li.get('id')}", metro)
+        if d:
+            d["our_description"] = describe(d)
+            out.append(d)
+    return out

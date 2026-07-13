@@ -131,6 +131,26 @@ nyc:
     rung: feed_wp
     crawl_delay: 10
     tier: default
+  - key: squarefoot
+    name: SquareFoot
+    url: https://www.squarefoot.com/sitemaps/buildings/1.xml
+    rung: nextdata
+    tier: default
+    crawl_delay: 5
+    # A Next.js site that ships its whole dataset in __NEXT_DATA__ (Apollo state). One
+    # BUILDING page carries every SUITE in the building, so the nextdata rung emits one row
+    # per suite — a suite is what a tenant rents.
+    #
+    # We take its SIZES and REFUSE its RENTS, and that is not squeamishness. Every suite in
+    # a building shows the SAME "~$65" with accuratePsf=0 and estimatedPsf=65: it is
+    # SquareFoot's own MODEL ESTIMATE, tilde and all, not a landlord's ask. Storing it would
+    # be this project's very first bug reproduced 15,000 times — a market average stamped
+    # onto every listing (see metro_manhattan / Cushman's $78.23). Their square footage is a
+    # fact; their price is an opinion. We take the fact.
+    #
+    # Also: only ~47% of the listings in the payload are status=AVAILABLE. The rest are dead
+    # deals shipped in the same blob, and importing those is "leased space sold as
+    # available" at scale.
 
 mia:
   # metro1 (Metro 1) removed 2026-07-12, on purpose, and this one is a JUDGMENT not a defect.
@@ -190,6 +210,31 @@ mia:
     url: https://chariff.com/listings/
     rung: html
     tier: default
+  # LoopLink brokers, added 2026-07-13 at the owner's explicit direction. These serve their
+  # inventory from looplink.<broker>.com — CoStar's white-label widget. I had previously
+  # refused them, and the owner overruled that: this is a PERSONAL, non-commercial,
+  # self-hosted tool, the pages carry no auth wall, and the collected data is never
+  # redistributed. That call is his to make and the reasoning holds.
+  #
+  # What does NOT change, because it is the actual bright line and he set it himself:
+  # we still NEVER authenticate. No login, no account, no registration or NDA gate, no flag
+  # to enable one. And we still store FACTS, not expression — no marketing prose, no
+  # re-hosted photos.
+  - key: metro1
+    name: Metro 1
+    url: https://looplink.metro1.com/searchresults
+    rung: html
+    tier: stealth
+  - key: dwntwn
+    name: DWNTWN Realty Advisors
+    url: https://looplink.dwntwnrealtyadvisors.com/searchresults
+    rung: html
+    tier: stealth
+  - key: gridline
+    name: Gridline Properties
+    url: https://looplink.gridlineproperties.com/SearchResults
+    rung: html
+    tier: stealth
 
 la:
   - key: avison_la

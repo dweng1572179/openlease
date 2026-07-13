@@ -315,6 +315,10 @@ def close() -> None:
 
 
 _LOC = re.compile(r"<loc>\s*([^<\s]+)\s*</loc>")
+# A sitemap that names the site's INTERNAL hostname. squarefoot.com's index points at
+# http://squapi:4500/sitemaps/... — a container name that resolves nowhere outside their
+# network. It is their misconfiguration, and the paths are right; only the host is wrong.
+_INTERNAL_HOST = re.compile(r"^https?://[a-z0-9_-]+:\d+", re.I)
 # A URL that smells like inventory. Deliberately broader than "listing|propert": real sites
 # use /space/, /availability/, /building/, /asset/. Generic — never a per-site pattern.
 INVENTORY_RE = re.compile(r"propert|listing|space|availab|building|asset", re.I)
@@ -346,6 +350,12 @@ def is_listing_page(url: str) -> bool:
     return bool(INVENTORY_RE.search(url))
 
 
+def _public(u: str, base: str) -> str:
+    """Rewrite a sitemap loc that names the site's INTERNAL host onto the public one."""
+    root = f"{urlparse(base).scheme}://{urlparse(base).netloc}"
+    return _INTERNAL_HOST.sub(root, u)
+
+
 def sitemap_urls(base: str, src: dict) -> list[str]:
     """Rung 2. <lastmod> is what drives a recrawl; absent one, the URL is crawled once.
 
@@ -364,7 +374,7 @@ def sitemap_urls(base: str, src: dict) -> list[str]:
     if not body:
         return []
 
-    locs = _LOC.findall(body)
+    locs = [_public(u, base) for u in _LOC.findall(body)]
     # A sitemap lives at the DOMAIN root, so a source scoped to a section of a site
     # (avisonyoung.us/web/los-angeles/properties-for-lease) pulls that firm's NATIONAL
     # inventory. Keep only what sits under the source's own path — the rest is another
@@ -385,7 +395,8 @@ def sitemap_urls(base: str, src: dict) -> list[str]:
         for child in children[:MAX_SITEMAP_CHILDREN]:
             sub = fetch(child, src)
             if sub:
-                out += [u for u in _LOC.findall(sub) if not u.endswith(".xml")]
+                out += [_public(u, base) for u in _LOC.findall(sub)
+                        if not u.endswith(".xml")]
         if len(children) > MAX_SITEMAP_CHILDREN:
             log.info("%s: sitemap index has %d children, read the first %d",
                      src.get("key"), len(children), MAX_SITEMAP_CHILDREN)
@@ -714,6 +725,16 @@ def crawl_source(src: dict, metro: str, limit: int = 100) -> list[dict]:
             continue
         body = fetch(url, src)
         if not body:
+            continue
+
+        if src.get("rung") == "nextdata":
+            # ONE PAGE, MANY LISTINGS: a building page carries every suite in the
+            # building, and a suite is what a tenant actually rents.
+            for d in extract.from_next_data(body, url, src, metro):
+                if not _out_of_market(d, metro):
+                    _maybe_geocode(d)
+                    if _place(d, metro):
+                        out.append(d)
             continue
         # Descend only as far as we have to: JSON-LD -> facts-from-text -> the LLM.
         d = extract.from_jsonld(body, url, src, metro)
