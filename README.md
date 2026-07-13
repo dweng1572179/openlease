@@ -96,6 +96,12 @@ Three supplies, in order of how much you should trust them:
    Registry publishes a *vacancy flag* on every ground-floor commercial space in the city —
    **43,978 vacant storefronts**, citywide, as of this writing — via `POST
    /api/import/storefronts`. That's a lead source no broker site has.
+
+   NYC is the only one of the three that has this. We looked: Miami-Dade and the City of
+   Miami publish parcels and zoning but no vacancy inventory (Miami Beach has *discussed* a
+   vacant-storefront registry; it doesn't exist), and LA publishes nothing equivalent. So
+   NYC's listing count is structurally much larger than the other two, and that's a fact
+   about the cities, not about the crawler.
 2. **Your own CSV** — a broker export, a CoStar pull, whatever you already licensed:
    `POST /api/import/csv`.
 3. **The crawler** — `POST /api/crawl`, over the allowlist in `app/data/sources.yml`.
@@ -112,6 +118,16 @@ the crawl loop made supply hostage to POI lookups: a measured run spent 30 minut
 off and never got past New York. Split apart, the same crawl finishes in nine. Both are
 still ingest-time — Overpass is never called while you're searching.
 
+Enrichment also asks Overpass **once per ~3km tile**, not once per listing. Listings cluster
+(242 of ours sit inside Manhattan and Brooklyn), and a 1.5-mile POI circle around each one
+overlaps its neighbours' almost entirely — so the naive version made 345 requests for about
+40 requests' worth of distinct data, and the mirror started answering `406` and `504`, which
+is a free public service telling you that you're being rude. Tiling is not an accuracy
+trade: Walk Score's decay is exactly zero beyond 2,414 m, so a tile padded by that radius
+provably contains every POI that can affect any listing inside it, and each listing's POIs
+are filtered back to its true radius before scoring. The scores come out *identical* — there
+is a test that asserts precisely that.
+
 ### What the crawler will and won't do
 
 It obeys `robots.txt` (including `Crawl-delay`), asks for it under its own honest identity,
@@ -124,6 +140,17 @@ account, no cookie, no registration- or NDA-gated page — stealth fetching is f
 past a bot-wall on a page that's already public; it never crosses an authentication wall.
 Every scraping case that ended badly ended there.
 
+**It also declines things it is technically allowed to take.** Several Miami brokerages
+(Metro 1, DWNTWN, Gridline) don't serve their inventory themselves — it arrives in an
+iframe from `looplink.<broker>.com`, which is **CoStar's** white-label widget running on
+CoStar's infrastructure under the broker's DNS. Those hosts serve no `robots.txt`, so the
+"no robots.txt means nothing is forbidden" rule would happily let us crawl them. We don't.
+A missing `robots.txt` on a broker's own site is fair to proceed on; a missing `robots.txt`
+on CoStar's is not consent — and CoStar v. CREXi is the exact fact pattern the rule below
+exists for. Those brokers are commented out in `sources.yml` with the reason, and Miami is
+a smaller market here as a direct result. That's the cost of the rule, and it's the right
+trade.
+
 It stores **facts, not expression**: address, size, ask, type, broker contact, and the link
 back to the original. It does **not** copy the broker's marketing prose (the descriptions
 you read here are written from the facts by OpenLease) and it does **not** download or
@@ -132,13 +159,19 @@ links you to their page). This is the same fact-pattern that CoStar successfully
 against CREXi.
 
 And it would rather tell you nothing than tell you something wrong. A broker's feed is often
-national: RIPCO's returns properties in Cleburne, Texas and Panama City, Florida alongside
+national: RIPCO's 833 listings cover Cleburne, Texas and Panama City, Florida alongside
 Manhattan. A geocoder scoped to one metro *does not decline* — ask NYC's for a street in
-Stony Brook and it will confidently hand you a different street in Brooklyn, with the same
+Cleburne and it will confidently hand you a different street in Brooklyn, with the same
 confidence score it reports for a correct hit. So the crawler reads the state off the
-listing's own URL before it geocodes anything, drops what's out of market, and checks that
-the street it asked for is the street it got back. A listing it can't place keeps its address
-and its link and simply has **no pin** — rather than a plausible pin in the wrong city.
+listing's own URL **before** it geocodes anything, and checks that the street it asked for is
+the street it got back.
+
+A state we cover is not "out of market" — it's a *different* one of our markets, so it gets
+routed there and geocoded as what it is. (Getting this wrong is what deleted RIPCO's entire
+Florida book: the firm is one of the largest retail brokerages in Miami, and Miami is the
+market this README demos in. We were throwing away the answer to our own example query.)
+Only a state we don't cover is dropped. A listing that can't be placed keeps its address and
+its link and simply has **no pin** — rather than a plausible pin in the wrong city.
 
 This is local-and-personal software. Don't republish what it collects.
 
@@ -156,14 +189,18 @@ With no Anthropic key, a rules-based parser takes over instead.
 
 Walk Score is **Walk Score's own published 2011 methodology**, computed here from
 OpenStreetMap: nine amenity categories, distance-decayed, normalized to 0–100. Checked
-against Walk Score's own published anchors: **Empire State Building = 100** (reproduces
-exactly) and **Bay Ridge, Brooklyn = 95** — Walk Score itself publishes 98 for Bay Ridge, so
-this is 3 points low. That gap is real and it's disclosed, not rounded away: it comes from
-OpenStreetMap's POI density in Bay Ridge's weaker categories (parks, books, schools) falling
-short of whatever proprietary database Walk Score used in 2011 — not an error in the decay
-curve or the weights. A third anchor, an industrial control block in **Vernon, LA = 18**,
-proves the score actually discriminates rather than defaulting everything near 100. Every
-listing page shows the per-category breakdown, so it explains the score instead of
+against Walk Score's own published anchors:
+
+| Anchor | Walk Score publishes | OpenLease computes |
+|---|---|---|
+| Empire State Building | 100 | **100** |
+| Bay Ridge, Brooklyn | 98 | **99** |
+| Vernon, LA (industrial control block) | — | **33** |
+
+The first two reproduce. The third is the one that matters most: a scoring bug that defaults
+everything to "walkable" would still pass the first two, and Vernon — a working industrial
+district — proves the score actually *discriminates* rather than flattering every address.
+Every listing page shows the per-category breakdown, so it explains the score instead of
 asserting it.
 
 **Transit Score is not calibrated.** It aggregates trips **per route**, not per stop, which
