@@ -192,3 +192,66 @@ def test_suggestion_chips_are_not_broken_html(client):
     for h in handlers:
         assert h.rstrip().endswith("'submit')"), h   # the WHOLE handler is intact
         assert "htmx.trigger" in h
+
+
+def test_a_drawn_area_is_a_HARD_constraint_not_a_re_ranking(client):
+    """SpaceFinder's "Draw area". A rectangle the user drew is a bbox, and a bbox is a
+    constraint — a listing outside it must not appear because it ranked well. It also
+    overrides whatever bbox the message implied: the user drew it, so they mean it."""
+    # a box tight around Wynwood
+    wynwood = "25.79,-80.21,25.81,-80.19"
+    r = client.post("/api/search", json={"message": "retail", "metro": "mia", "bbox": wynwood})
+    body = r.json()
+    assert body["results"], body["reply"]
+    for x in body["results"]:
+        assert 25.79 <= x["lat"] <= 25.81, x["address"]
+        assert -80.21 <= x["lng"] <= -80.19, x["address"]
+
+    # a box over open water off Miami — nothing is in it, and we say so rather than
+    # quietly handing back the nearest thing
+    ocean = "25.60,-80.00,25.62,-79.98"
+    body = client.post("/api/search",
+                       json={"message": "retail", "metro": "mia", "bbox": ocean}).json()
+    assert body["results"] == []
+
+
+def test_an_unparseable_drawn_bbox_is_ignored_not_crashed_on(client):
+    body = client.post("/api/search",
+                       json={"message": "retail", "metro": "mia", "bbox": "garbage"}).json()
+    assert body["results"]          # falls back to the query's own geography
+
+
+def test_saved_only_filters_to_the_shortlist(client):
+    from app import db
+    all_hits = client.post("/api/search", json={"message": "retail", "metro": "mia"}).json()
+    assert all_hits["results"]
+    lid = all_hits["results"][0]["id"]
+
+    none_saved = client.post("/api/search",
+                             json={"message": "retail", "metro": "mia", "savedOnly": True}).json()
+    assert none_saved["results"] == [] or all(
+        x["id"] != lid for x in none_saved["results"])
+
+    if not db.is_saved(lid):
+        db.toggle_save(lid)
+    only = client.post("/api/search",
+                       json={"message": "retail", "metro": "mia", "savedOnly": True}).json()
+    assert [x["id"] for x in only["results"]] == [lid]
+    db.toggle_save(lid)          # leave the shared DB as we found it
+
+
+def test_address_lookup_never_guesses(client, monkeypatch):
+    """The map's "Look up an address". A metro-scoped geocoder will hand back a same-named
+    street in its own city rather than decline — so a miss must return nulls WITH a reason,
+    not a plausible pin somewhere else."""
+    from app import crawl
+    monkeypatch.setattr(crawl, "_geocode", lambda addr, metro: None)
+    r = client.post("/api/geocode", json={"address": "nowhere at all", "metro": "nyc"})
+    body = r.json()
+    assert body["lat"] is None and body["lng"] is None
+    assert "no match" in body["reason"]
+
+    monkeypatch.setattr(crawl, "_geocode", lambda addr, metro: (40.7484, -73.9857))
+    body = client.post("/api/geocode",
+                       json={"address": "350 5th Ave", "metro": "nyc"}).json()
+    assert body["lat"] == 40.7484 and body["lng"] == -73.9857

@@ -15,14 +15,35 @@ from .routes_search import SearchRequest, api_search
 @app.post("/search", response_class=HTMLResponse)
 def search_fragment(request: Request, message: str = Form(...), metro: str = Form("nyc"),
                     session_id: str = Form(""), prior_state: str = Form(""),
+                    bbox: str = Form(""), saved_only: str = Form(""),
                     _=Depends(require_auth)):
     body = SearchRequest(
         message=message, metro=metro,
         sessionId=session_id or None,
         priorState=json.loads(prior_state) if prior_state else None,
+        bbox=bbox or None,
+        savedOnly=bool(saved_only),
     )
     res = api_search(body, True)
     return templates.TemplateResponse(request, "_results.html", res)
+
+
+class GeocodeBody(BaseModel):
+    address: str
+    metro: str = "nyc"
+
+
+@app.post("/api/geocode")
+def api_geocode(body: GeocodeBody, _=Depends(require_auth)):
+    """The map's "Look up an address" box. Uses the metro's own free provider — no new key.
+    A miss returns nulls, not a guess: a metro-scoped geocoder will happily hand back a
+    same-named street in its own city, so `geosearch` verifies the street it got is the
+    street we asked for, and answers None when it isn't."""
+    from . import crawl
+    coords = crawl._geocode(body.address, body.metro if body.metro in METROS else "nyc")
+    if not coords:
+        return {"lat": None, "lng": None, "reason": "no match for that address in this market"}
+    return {"lat": coords[0], "lng": coords[1]}
 
 
 @app.get("/listings/{listing_id}", response_class=HTMLResponse)

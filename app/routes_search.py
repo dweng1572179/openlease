@@ -7,6 +7,7 @@ Pipeline (spec Layer 3): LLM parse -> HARD filter -> hybrid rank -> LLM reply.
 Near-miss: when the hard filter returns nothing, relax the SOFTEST constraint (the rent
 cap, then the size band) and re-run — but say so, rather than pretending the results
 matched."""
+import logging
 import uuid
 
 from fastapi import Depends
@@ -16,12 +17,16 @@ from . import ai, db, rank
 from .app import app, require_auth
 from .models import METRO_KEYS, ListingQuery, to_api
 
+log = logging.getLogger("openlease")
+
 
 class SearchRequest(BaseModel):
     message: str
     priorState: dict | None = None     # the prior turn's query.mustHaves, camelCase
     sessionId: str | None = None
     metro: str = "nyc"
+    bbox: str | None = None            # "minLat,minLng,maxLat,maxLng" — the drawn area
+    savedOnly: bool = False
 
 
 # Named stages, tried in this order, EACH AT MOST ONCE. A stage whose constraint isn't
@@ -76,7 +81,20 @@ def api_search(body: SearchRequest, _=Depends(require_auth)):
 
     q = ai.nl_to_query(body.message, body.priorState, metro)
 
+    # A drawn area is a HARD constraint, like every other one — it becomes the bbox in the
+    # SQL WHERE, never a re-ranking. It overrides whatever bbox the message implied: the
+    # user drew it, so they mean it.
+    if body.bbox:
+        try:
+            lo_lat, lo_lng, hi_lat, hi_lng = (float(x) for x in body.bbox.split(","))
+            q.min_lat, q.min_lng, q.max_lat, q.max_lng = lo_lat, lo_lng, hi_lat, hi_lng
+        except (ValueError, TypeError):
+            log.warning("ignoring an unparseable drawn bbox: %r", body.bbox)
+
     rows = db.filter_listings(q, metro)
+    if body.savedOnly:
+        saved = {r["id"] for r in db.list_saved()}
+        rows = [r for r in rows if r["id"] in saved]
     is_near_miss = False
     relaxed_what = ""
     q_used = q
