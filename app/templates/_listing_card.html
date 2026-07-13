@@ -15,9 +15,20 @@
       {% if l.rationale %}<p class="mt-1 text-xs text-slate-600">{{ l.rationale }}</p>{% endif %}
     </div>
     <div class="text-right shrink-0">
+      {# Say the unit the LISTING quotes. LA and industrial quote $/SF/MONTH — printing
+         $3.20/SF/mo as "$3 /SF/yr" is off by 12x and rounds the cents away, which reads
+         as a plausible number and is simply wrong. #}
       {% if l.askingRent is not none %}
+      {% if l.rentUnit == 'sf_mo' %}
+      <p class="text-sm font-semibold">${{ "{:,.2f}".format(l.askingRent) }}
+        <span class="text-xs font-normal text-slate-400">/SF/mo</span></p>
+      {% elif l.rentUnit == 'mo' %}
+      <p class="text-sm font-semibold">${{ "{:,.0f}".format(l.askingRent) }}
+        <span class="text-xs font-normal text-slate-400">/mo</span></p>
+      {% else %}
       <p class="text-sm font-semibold">${{ "{:,.0f}".format(l.askingRent) }}
         <span class="text-xs font-normal text-slate-400">/SF/yr</span></p>
+      {% endif %}
       {% elif l.salePrice is not none %}
       <p class="text-sm font-semibold">${{ "{:,}".format(l.salePrice) }}</p>
       {% else %}

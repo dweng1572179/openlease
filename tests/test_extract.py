@@ -179,3 +179,66 @@ def test_geo_hint_is_used_for_geocoding_and_never_stored():
     d = extract.from_wp_json(item, src, "nyc")
     assert d["geo_hint"] == "2732 east 15th street panama city fl"
     assert d["address"].startswith("2732 East 15th Street")   # display keeps the human form
+
+
+# --- rung 3c: facts out of the page text, keyless ---------------------------------------
+
+_SRC = {"key": "westmac", "name": "WESTMAC", "url": "https://www.westmac.com"}
+
+_PAGE = """<html><head><title>540 Rose Avenue | WESTMAC Commercial</title></head><body>
+<nav>Home Listings About</nav>
+<h1>540 Rose Avenue</h1>
+<div class="detail">
+  <p>Prime Venice retail opportunity! An incredible flagship space.</p>
+  <ul><li>Size: 1,400 SF</li><li>Rent: $5.50/SF/mo NNN</li><li>Type: Retail</li></ul>
+</div>
+<footer>(c) WESTMAC</footer></body></html>"""
+
+
+def test_facts_rung_pulls_size_rent_and_type_off_a_real_page():
+    """The rung that makes the product usable with no key. Most broker sites publish no
+    feed and no real-estate JSON-LD — their listings are prose on an HTML page — so without
+    this the only way to get a size or an ask was the paid LLM rung, and a keyless crawl
+    produced a link directory: addresses with no SF and no rent, which the hard filter
+    ("~1,500 SF under $8k/mo") cannot filter on at all."""
+    d = extract.from_html_facts(_PAGE, "https://www.westmac.com/listings/540-rose/", _SRC, "la")
+    assert d["address"] == "540 Rose Avenue"
+    assert d["size_sf"] == 1400
+    assert d["asking_rent"] == 5.5
+    assert d["rent_unit"] == "sf_mo"          # LA quotes per MONTH — 12x matters
+    assert d["property_type"] == "retail"
+    assert d["source_url"].endswith("/540-rose/")
+
+
+def test_the_facts_rung_never_stores_the_brokers_prose():
+    """The page's own copy ("Prime Venice retail opportunity! An incredible flagship
+    space.") must never reach the database. our_description is OURS, from the facts."""
+    d = extract.from_html_facts(_PAGE, "https://www.westmac.com/listings/540-rose/", _SRC, "la")
+    assert "flagship" not in d["our_description"].lower()
+    assert "incredible" not in d["our_description"].lower()
+    assert "opportunity" not in d["our_description"].lower()
+    assert "1,400 SF" in d["our_description"] and "540 Rose Avenue" in d["our_description"]
+
+
+def test_a_monthly_quote_is_not_rendered_as_a_yearly_one():
+    """describe() hardcoded "/SF/yr" and rounded to whole dollars, so a real LA listing at
+    $5.50/SF/mo read as "$6/SF/yr" — off by 12x, cents gone, and entirely plausible."""
+    d = extract.from_html_facts(_PAGE, "https://www.westmac.com/listings/540-rose/", _SRC, "la")
+    assert "$5.50/SF/mo" in d["our_description"], d["our_description"]
+    assert "/SF/yr" not in d["our_description"]
+
+
+def test_an_address_with_no_facts_is_not_a_listing():
+    """The hard filter runs on SF and rent. A row with neither is invisible to every query
+    that matters, so it is not worth storing — we would just be a link directory."""
+    bare = "<html><h1>123 Nowhere Street</h1><p>Call for details.</p></html>"
+    assert extract.from_html_facts(bare, "https://x.test/listings/123", _SRC, "la") is None
+
+
+def test_absurd_numbers_are_rejected_as_parse_artifacts():
+    """A phone number, a zip, a year — a page is full of digits. A size must carry a UNIT,
+    and it must be within human bounds."""
+    junk = ("<html><h1>1 Main Street</h1><p>Call 310-555-1212. Est. 1987. "
+            "Suite 4 SF. 99,999,999 SF campus.</p></html>")
+    d = extract.from_html_facts(junk, "https://x.test/listings/1", _SRC, "la")
+    assert d is None or d.get("size_sf") is None   # 4 SF and 99M SF are both out of bounds

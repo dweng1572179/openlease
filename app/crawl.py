@@ -507,13 +507,20 @@ def crawl_source(src: dict, metro: str, limit: int = 100) -> list[dict]:
         body = fetch(url, src)
         if not body:
             continue
+        # Descend only as far as we have to: JSON-LD -> facts-from-text -> the LLM.
         d = extract.from_jsonld(body, url, src, metro)
-        if not d and src.get("rung") != "jsonld":
+        if not d:
+            # Rung 3c, keyless. Most of these sites publish no feed and no real-estate
+            # JSON-LD, so without this the ONLY way to get a size or a rent was the paid
+            # rung — and a keyless crawl produced addresses with no SF and no ask, which
+            # the hard filter cannot filter on. This is what makes the corpus searchable.
+            d = extract.from_html_facts(body, url, src, metro)
+        if not d and src.get("rung") == "html":
             try:
                 md = _to_markdown(body)
             except Exception:  # noqa: BLE001
                 md = body
-            d = extract.from_html_llm(md, url, src, metro)
+            d = extract.from_html_llm(md, url, src, metro)     # no-op without a key
         if d and not _out_of_market(d, metro):
             _maybe_geocode(d)
             if _place(d, metro):

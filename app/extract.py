@@ -243,6 +243,124 @@ def from_jsonld(html: str, url: str, src: dict, metro: str) -> dict | None:
     return None
 
 
+# --- rung 3c: facts out of the page text, keyless (no per-site parsers) -------
+#
+# The rung that makes the product usable without a key. Most broker sites publish no
+# structured feed and no real-estate JSON-LD — their listings are prose on an HTML page —
+# so before this rung the ONLY way to get a size or an asking rent was the LLM, and a
+# keyless crawl produced a link directory: addresses with no SF and no rent, which the hard
+# filter ("~1,500 SF under $8k/mo") cannot filter on at all.
+#
+# Reading "1,500 SF" out of a page is not a per-site CSS parser — there is no selector here,
+# it works on any site, and a redesign costs nothing. And a number is a FACT: we are not
+# copying anyone's expression. This is the "widen the generic key lists" instruction, taken
+# to the page text.
+
+_TAGS = re.compile(r"<script.*?</script>|<style.*?</style>|<nav.*?</nav>|<footer.*?</footer>",
+                   re.S | re.I)
+_H1 = re.compile(r"<h1[^>]*>(.*?)</h1>", re.S | re.I)
+_OG_TITLE = re.compile(r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)', re.I)
+_TITLE = re.compile(r"<title[^>]*>(.*?)</title>", re.S | re.I)
+
+# "1,500 SF" / "1500 sq ft" / "1,500 square feet". Requires a unit — a bare number is not a size.
+_SIZE = re.compile(r"([\d][\d,]{1,8})\s*(?:\+/-\s*)?(?:SF\b|sq\.?\s?ft\b|square\s+feet)", re.I)
+# "$95/SF/YR", "$4.75 per SF" (LA quotes monthly), "$95.00/SF"
+_RENT_SF = re.compile(r"\$\s?([\d][\d,]*\.?\d*)\s*(?:/|\s+per\s+)\s*(?:SF|sq\.?\s?ft)", re.I)
+_RENT_SF_MO = re.compile(r"\$\s?([\d][\d,]*\.?\d*)\s*(?:/|\s+per\s+)\s*(?:SF|sq\.?\s?ft)\s*/?\s*(?:mo\b|month)", re.I)
+# "$8,000/mo", "$8,000 per month"
+_RENT_MO = re.compile(r"\$\s?([\d][\d,]{2,})\s*(?:/|\s+per\s+)\s*(?:mo\b|month)", re.I)
+_SALE = re.compile(r"\$\s?([\d][\d,]{5,})(?!\s*(?:/|\s+per\s+))", re.I)
+
+# Sanity bounds. A "size" of 3 SF or 40,000,000 SF is a parse artifact, not a listing.
+_MIN_SF, _MAX_SF = 100, 2_000_000
+_MIN_SF_YR, _MAX_SF_YR = 5.0, 1_000.0        # $/SF/yr
+_MIN_SF_MO, _MAX_SF_MO = 0.5, 90.0           # $/SF/mo (LA/industrial convention)
+
+
+def _num(s: str) -> float:
+    return float(s.replace(",", ""))
+
+
+def page_text(html: str) -> str:
+    """The page with its chrome stripped. No CSS selector — nav/footer/script go by tag."""
+    t = _TAGS.sub(" ", html)
+    t = re.sub(r"<[^>]+>", " ", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def _headline(html: str) -> str | None:
+    for pat in (_H1, _OG_TITLE, _TITLE):
+        m = pat.search(html)
+        if m:
+            h = re.sub(r"<[^>]+>", "", m.group(1)).strip()
+            h = re.split(r"\s+[|–—]\s+", h)[0].strip()     # drop "| Site Name"
+            if h:
+                return h[:120]
+    return None
+
+
+def from_html_facts(html: str, url: str, src: dict, metro: str) -> dict | None:
+    """Rung 3c. Facts (size, ask, type) out of the page's own text — keyless, generic.
+
+    Returns None unless it finds an address AND at least one hard fact (size or rent).
+    A page we can only get an address off is not worth a row: the search filters on SF and
+    rent, so a listing with neither is invisible to every query that matters.
+    """
+    txt = page_text(html)
+    addr = _headline(html)
+    if not addr or not _ADDR_LIKE.match(addr):
+        # No street-address-looking headline. Fall back to the URL slug, which is where
+        # these sites put it ("/listings/1234-w-fulton-market/").
+        slug = re.sub(r"[/?#].*$", "", url.rstrip("/").rsplit("/", 1)[-1])
+        cand = slug.replace("-", " ").strip()
+        addr = cand if _ADDR_LIKE.match(cand) else None
+    if not addr:
+        return None
+
+    d: dict = {"address": addr, "broker_firm": src["name"]}
+
+    sizes = [_num(s) for s in _SIZE.findall(txt)]
+    sizes = [s for s in sizes if _MIN_SF <= s <= _MAX_SF]
+    if sizes:
+        d["size_sf"] = int(min(sizes))              # the smallest divisible unit on offer
+        if len(sizes) > 1:
+            d["divisible_min_sf"], d["divisible_max_sf"] = int(min(sizes)), int(max(sizes))
+
+    # A per-SF quote is monthly in LA/industrial and yearly elsewhere; the page says which.
+    mo = [_num(r) for r in _RENT_SF_MO.findall(txt)]
+    mo = [r for r in mo if _MIN_SF_MO <= r <= _MAX_SF_MO]
+    yr = [_num(r) for r in _RENT_SF.findall(txt)]
+    yr = [r for r in yr if _MIN_SF_YR <= r <= _MAX_SF_YR]
+    if mo:
+        d["asking_rent"], d["rent_unit"] = min(mo), "sf_mo"
+    elif yr:
+        d["asking_rent"], d["rent_unit"] = min(yr), "sf_yr"
+    else:
+        gross = [_num(r) for r in _RENT_MO.findall(txt)]
+        if gross:
+            d["asking_rent"], d["rent_unit"] = min(gross), "mo"
+
+    for t in _TYPES:
+        if re.search(r"\b" + t + r"\b", txt, re.I):
+            d["property_type"] = t
+            break
+
+    if re.search(r"\bfor\s+sale\b", txt, re.I) and not d.get("asking_rent"):
+        d["transaction_type"] = "sale"
+        sale = [_num(s) for s in _SALE.findall(txt)]
+        if sale:
+            d["sale_price"] = int(min(sale))
+
+    # An address alone is not a listing — the hard filter runs on SF and rent.
+    if not (d.get("size_sf") or d.get("asking_rent") or d.get("sale_price")):
+        return None
+
+    d = _clean(d, src, url, metro)
+    if d:
+        d["our_description"] = describe(d)      # our words, from the facts. Never the page's.
+    return d
+
+
 # --- rung 4: HTML + one LLM prompt (no per-site parsers) ----------------------
 
 def from_html_llm(markdown: str, url: str, src: dict, metro: str) -> dict | None:
@@ -312,7 +430,18 @@ def describe(d: dict) -> str:
         bits.append(f"in {d['neighborhood']}")
     tail = ""
     if d.get("asking_rent"):
-        tail = f", asking ${d['asking_rent']:,.0f}/SF/yr"
+        # Say the unit the listing actually quotes. LA and industrial quote $/SF/MONTH:
+        # rendering $3.20/SF/mo as "$3/SF/yr" is off by 12x AND rounds the cents away,
+        # which reads as a plausible number and is simply false.
+        rent, unit = d["asking_rent"], d.get("rent_unit") or "sf_yr"
+        if unit == "sf_mo":
+            tail = f", asking ${rent:,.2f}/SF/mo"
+        elif unit == "mo":
+            tail = f", asking ${rent:,.0f}/mo"
+        else:
+            tail = f", asking ${rent:,.2f}/SF/yr".replace(".00/", "/")
+    elif d.get("sale_price"):
+        tail = f", asking ${d['sale_price']:,}"
     sentence = " ".join(bits)
     # NOTE: str.capitalize() upper-cases the first char AND lower-cases every other
     # char — it would turn "2,100 SF ... Wicker Park" into "2,100 sf ... wicker park",

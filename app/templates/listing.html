@@ -19,11 +19,16 @@
 <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
   <div class="md:col-span-2 space-y-4">
     <div class="rounded-lg border bg-white p-4">
+      {# The listing quotes its own unit — LA and industrial quote $/SF/MONTH. Printing
+         $3.20/SF/mo as "$3/SF/yr" is off by 12x and drops the cents. #}
+      {% set ask = ("${:,.2f}/SF/mo".format(l.askingRent) if l.rentUnit == 'sf_mo' else
+                    "${:,.0f}/mo".format(l.askingRent) if l.rentUnit == 'mo' else
+                    "${:,.0f}/SF/yr".format(l.askingRent)) if l.askingRent else
+                   ("${:,}".format(l.salePrice) if l.salePrice else None) %}
       <dl class="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
         {% for label, val in [
             ("Type", l.propertyType), ("Size", "{:,} SF".format(l.sizeSf) if l.sizeSf else None),
-            ("Ask", "${:,.0f}/SF/yr".format(l.askingRent) if l.askingRent else
-                    ("${:,}".format(l.salePrice) if l.salePrice else None)),
+            ("Ask", ask),
             ("Lease type", l.leaseType), ("Floor", l.floor),
             ("Ceiling", "{} ft".format(l.ceilingHeightFt) if l.ceilingHeightFt else None),
             ("Available", l.availabilityDate), ("Walk Score", l.walkScore),
