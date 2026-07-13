@@ -476,6 +476,39 @@ def _place(d: dict, configured_metro: str) -> bool:
     return True
 
 
+_FACT_KEYS = ("size_sf", "asking_rent", "rent_unit", "property_type", "sale_price",
+              "transaction_type", "divisible_min_sf", "divisible_max_sf")
+
+
+def _fill_facts_from_detail_pages(recs: list[dict], src: dict) -> None:
+    """A WordPress feed gives the address and the link — and almost never the SIZE or the
+    ASK. Those live on the listing's own page.
+
+    Without this the feed rung produced a link directory for the two metros that depend on
+    it most (NYC is the primary market): 59 New York listings, 4 of them with a size, none
+    with a rent — invisible to every query that says "~1,500 SF under $8k/mo", which is to
+    say every real query. The detail page is one more fetch per listing, at the same
+    politeness delay as everything else, and it is what makes the row worth having.
+
+    Only ADDS facts; never overwrites what the feed already stated. The feed is the more
+    reliable source when it says anything at all.
+    """
+    for d in recs:
+        url = d.get("source_url")
+        if not url or all(d.get(k) for k in ("size_sf", "asking_rent")):
+            continue
+        body = fetch(url, src)
+        if not body:
+            continue
+        facts = extract.from_html_facts(body, url, src, d["metro"])
+        if not facts:
+            continue
+        added = {k: facts[k] for k in _FACT_KEYS if facts.get(k) and not d.get(k)}
+        if added:
+            d.update(added)
+            d["our_description"] = extract.describe(d)   # re-say it now that we know more
+
+
 def crawl_source(src: dict, metro: str, limit: int = 100) -> list[dict]:
     """Descend the ladder, stopping at the highest rung that produces listings."""
     out: list[dict] = []
@@ -495,6 +528,7 @@ def crawl_source(src: dict, metro: str, limit: int = 100) -> list[dict]:
                     if _place(d, metro):
                         out.append(d)
             if out:
+                _fill_facts_from_detail_pages(out, src)
                 return out                      # the rung worked — do not descend
             log.info("%s: wp-json returned nothing usable, descending the ladder", src["key"])
 

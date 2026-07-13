@@ -746,3 +746,33 @@ def test_a_national_feed_is_filtered_by_state_BEFORE_geocoding():
 
     unknown = {"address": "somewhere", "source": "x"}    # no slug state -> we don't guess
     assert crawl._out_of_market(unknown, "nyc") is False
+
+
+def test_the_feed_rung_visits_the_detail_page_for_the_facts(monkeypatch, isolated_db):
+    """A WordPress feed gives the address and the link — and almost never the SIZE or the
+    ASK. Those are on the listing's own page. Without this the feed rung produced a link
+    directory for the two metros that depend on it most (NYC is the primary market): 59
+    New York listings, 4 with a size, none with a rent — invisible to every query that says
+    "~1,500 SF under $8k/mo", which is every real query."""
+    detail = """<html><h1>57 West 38th Street</h1>
+                <p>9,470 SF of prime Midtown retail. Incredible flagship opportunity!</p></html>"""
+    monkeypatch.setattr(crawl, "fetch", lambda url, src: detail)
+
+    recs = [{"address": "57 West 38th Street", "metro": "nyc", "source": "ripco",
+             "source_url": "https://www.ripcony.com/property-listings/57-west-38th-street/",
+             "our_description": "Commercial space at 57 West 38th Street."}]
+    crawl._fill_facts_from_detail_pages(recs, {"key": "ripco", "name": "RIPCO"})
+
+    assert recs[0]["size_sf"] == 9470            # now the hard filter can see it
+    assert recs[0]["property_type"] == "retail"
+    # ...and our_description was re-said now that we know more — still OURS, never theirs
+    assert "9,470 SF" in recs[0]["our_description"]
+    assert "flagship" not in recs[0]["our_description"].lower()
+
+
+def test_the_detail_pass_never_overwrites_what_the_feed_already_said():
+    """The feed is the more reliable source when it says anything at all."""
+    recs = [{"address": "1 Main St", "metro": "nyc", "source": "x",
+             "source_url": "https://x.test/1", "size_sf": 1500, "asking_rent": 95.0}]
+    crawl._fill_facts_from_detail_pages(recs, {"key": "x", "name": "X"})
+    assert recs[0]["size_sf"] == 1500 and recs[0]["asking_rent"] == 95.0   # untouched
