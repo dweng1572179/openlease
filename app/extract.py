@@ -372,10 +372,16 @@ def _num(s: str) -> float:
 
 
 def page_text(html: str) -> str:
-    """The page with its chrome stripped. No CSS selector — nav/footer/script go by tag."""
+    """The page with its chrome stripped. No CSS selector — nav/footer/script go by tag.
+
+    Entities are decoded, because every pattern below reads this text as if a human wrote it.
+    WestMac's sale headline is "For Sale &ndash; $14,995,000", and to a regex expecting a
+    dash between the label and the figure, `&ndash;` is not a dash — so the sale price of a
+    $15,000,000 building was invisible on a page that states it in the headline.
+    """
     t = _TAGS.sub(" ", html)
     t = re.sub(r"<[^>]+>", " ", t)
-    return re.sub(r"\s+", " ", t).strip()
+    return re.sub(r"\s+", " ", unescape(t)).strip()
 
 
 def _headline(html: str) -> str | None:
@@ -419,7 +425,13 @@ _RENT_LABEL = re.compile(
 #   "asking rents held flat at $78.23/SF"      a market statistic (metro-manhattan)
 _RENT_DECOY = re.compile(
     r"max\s+rent|min\s+rent|triple\s+net|nnn\s+charge|cam\s+charge|filter"
-    r"|related\s+listing|similar|nearby|market|average|comparable|held\s+flat", re.I)
+    r"|related\s+listing|similar|nearby|market|average|comparable|held\s+flat"
+    # A price per square foot is not a RENT per square foot. WestMac writes
+    #   "1025 Westwood  For Sale – $14,995,000  ($810/SF)"
+    # and $810/SF is what the BUILDING costs to buy, divided by its area. Read as an asking
+    # rent it becomes $810/SF/yr — roughly ten times Rodeo Drive, on a Westwood office block.
+    # A $15,000,000 building was on the market as a rental at a price nobody has ever paid.
+    r"|for\s+sale|sale\s+price|asking\s+price|sold\s+for|purchase\s+price", re.I)
 _DECOY_WINDOW = 60          # chars of run-up to check for a decoy word
 
 
@@ -703,15 +715,21 @@ def _unit_for(val: float, period: str, metro: str, ptype: str) -> str | None:
 
 
 _SALE_LABEL = re.compile(
-    r"(?:asking\s+price|sale\s+price|offered\s+at|price)\s*[:\-\u2013]?\s*"
+    r"(?:asking\s+price|sale\s+price|offered\s+at|for\s+sale|price)\s*[:\-\u2013]?\s*"
     r"\$\s?([\d][\d,]{5,})", re.I)
+# The sale price gets its OWN decoys. It cannot reuse the rent's, because "for sale" is a
+# decoy for a RENT and the headline for a PRICE \u2014 the same words, opposite meanings. Reusing
+# the rent list here would make _sale_of reject the very figure it exists to find.
+_SALE_DECOY = re.compile(
+    r"max\s+price|min\s+price|filter|related\s+listing|similar|nearby|market|average"
+    r"|comparable|recently\s+sold", re.I)
 
 
 def _sale_of(text: str) -> int | None:
     """RIPCO says "Asking Rent Upon Request" and "Asking Price $6,500,000" on the same page:
     it is FOR SALE, and refusing the rent (correctly) left us with nothing at all."""
     for m in _SALE_LABEL.finditer(text):
-        if _decoyed(text, m.start()):
+        if _SALE_DECOY.search(text[max(0, m.start() - _DECOY_WINDOW):m.start()]):
             continue
         val = _num(m.group(1))
         if 50_000 <= val <= 5_000_000_000:

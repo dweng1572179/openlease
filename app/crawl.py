@@ -405,6 +405,25 @@ def _to_markdown(body: str) -> str:
     return page.get_all_text(strip=True) if page else body
 
 
+_RANGE_ADDR = re.compile(r"^\s*(\d+)\s+(\d+)\s+(?=\D)")
+
+
+def _collapse_range(address: str) -> str | None:
+    """"1160 1170 N Gilbert Street" -> "1160 N Gilbert Street".
+
+    A multi-tenant industrial building spans a range of street numbers and its page is
+    titled with both ends of it — "1160-1170 N Gilbert Street" — which reaches us as two
+    house numbers in a row. No geocoder on earth resolves an address with two house numbers,
+    so 155 of Rexford's 320 buildings (and half of LA) had no map pin. Ask for the first
+    number in the range; the building is the same building.
+
+    Only the QUERY is normalized. The stored address stays exactly as the broker published
+    it, because "1160-1170 N Gilbert" is what the sign on the door says.
+    """
+    m = _RANGE_ADDR.match(address)
+    return _RANGE_ADDR.sub(m.group(1) + " ", address, count=1) if m else None
+
+
 def _geocode(address: str, metro: str) -> tuple[float, float] | None:
     """Resolve an address to (lat, lng) via the METRO'S OWN free, keyless provider — no
     new geocoding dependency, no new API key. NYC's GeoSearch already returns lat/lng
@@ -443,6 +462,12 @@ def _geocode(address: str, metro: str) -> tuple[float, float] | None:
             return (c["lat"], c["lng"])
     except Exception as e:  # noqa: BLE001
         log.warning("census geocoding failed for %r (%s): %s", address, type(e).__name__, e)
+
+    # Last try: an address that names a RANGE of street numbers. See _collapse_range.
+    single = _collapse_range(address)
+    if single:
+        log.info("retrying %r as %r (address range)", address, single)
+        return _geocode(single, metro)
     return None
 
 

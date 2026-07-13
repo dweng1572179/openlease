@@ -642,3 +642,23 @@ def test_a_building_is_never_one_of_its_own_units():
         txt, "https://www.ripcony.com/property-listings/90-broad-street-new-york-ny/",
         SRC, "nyc")
     assert d["size_sf"] == 700 and d["total_building_sf"] == 420000
+
+
+def test_a_sale_price_per_sf_is_not_a_rent_per_sf():
+    """WestMac writes "1025 Westwood For Sale – $14,995,000 ($810/SF)". That $810/SF is what
+    the BUILDING costs to BUY, divided by its area. Read as an asking rent it became
+    $810/SF/yr — about ten times Rodeo Drive, on a Westwood office block. A $15,000,000
+    building was listed as a rental at a price nobody has ever paid."""
+    txt = "1018 – 1025 Westwood For Sale – $14,995,000 ($810/SF) 12,000 SF"
+    assert extract._rent_of(txt, "la", "office") is None, "a sale price became an asking rent"
+    d = extract.from_html_facts(txt, "https://www.westmac.com/listings/1018-1025-westwood/",
+                                SRC, "la")
+    assert d and d["transaction_type"] == "sale"
+    assert d["sale_price"] == 14995000
+    assert not d.get("asking_rent")
+
+
+def test_a_real_westmac_lease_still_reads():
+    """The decoy must not eat the ask on a page that IS a lease."""
+    txt = "540 Rose Avenue For Lease - $10.00/SF/Mo. NNN. 2,400 SF available."
+    assert extract._rent_of(txt, "la", "retail") == (10.0, "sf_mo")

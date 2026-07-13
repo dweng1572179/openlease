@@ -987,3 +987,41 @@ def test_the_feed_rung_stops_at_the_limit():
         items = crawl._feed_items({"key": "x", "feed": "https://x.example.com/feed"}, limit=50)
     assert len(fetched) == 1, "walked past the limit"
     assert len(items) == 100
+
+
+def test_an_address_range_is_collapsed_for_the_geocoder():
+    """A multi-tenant industrial building spans a range of street numbers and its page is
+    titled with both ends — "1160-1170 N Gilbert Street" — which reaches us as two house
+    numbers in a row. No geocoder resolves an address with two house numbers, so 155 of
+    Rexford's 320 buildings (half of LA) had no map pin."""
+    assert crawl._collapse_range("1160 1170 N Gilbert Street") == "1160 N Gilbert Street"
+    assert crawl._collapse_range("18310 18330 Oxnard Street") == "18310 Oxnard Street"
+    # a normal address is left alone
+    assert crawl._collapse_range("5421 Argosy Avenue") is None
+    assert crawl._collapse_range("540 Rose Avenue, Venice, CA") is None
+    # ...and a street that BEGINS with a number is not a range ("1 Wall Street")
+    assert crawl._collapse_range("1 Wall Street") is None
+
+
+def test_the_range_retry_runs_inside_geocode_and_never_rewrites_the_address(monkeypatch):
+    """Only the geocoder QUERY is normalized. The stored address stays exactly as the broker
+    published it, because "1160-1170 N Gilbert" is what the sign on the door says."""
+    from app.providers import census
+
+    asked = []
+
+    def fake_census(addr):
+        asked.append(addr)
+        # the real Census geocoder resolves ONE house number, never a range
+        return {"lat": 34.0, "lng": -118.0} if addr == "1160 N Gilbert Street" else None
+
+    monkeypatch.setattr(census, "geocode", fake_census)
+    monkeypatch.setattr(crawl.registry, "parcel_provider", lambda m: None)
+
+    d = {"address": "1160 1170 N Gilbert Street", "metro": "la"}
+    crawl._maybe_geocode(d)
+
+    assert asked == ["1160 1170 N Gilbert Street", "1160 N Gilbert Street"], \
+        f"the range was never retried — asked {asked}"
+    assert d["lat"] == 34.0 and d["lng"] == -118.0
+    assert d["address"] == "1160 1170 N Gilbert Street", "the crawler rewrote the address"
