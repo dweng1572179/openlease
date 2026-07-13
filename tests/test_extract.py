@@ -348,13 +348,22 @@ def test_an_asking_price_is_a_sale_not_a_rent():
 def test_the_buildings_footprint_never_becomes_the_suites_size():
     """C1. "1250 Broadway is a 807,000 SF tower. This 3,305 SF suite is available." — both
     numbers appear once, so "most repeated" had no winner and the code took document order:
-    the TOWER. It was in the database as the size of the suite. Now: nothing repeats and
-    more than one candidate => we cannot tell which, so we refuse."""
+    the TOWER. It went into the database as the size of the suite.
+
+    This used to REFUSE (return None), because with two one-off candidates we could not tell
+    which was which. We can now: the sentence calls 807,000 a TOWER, and _building_sf reads
+    that, so the tower is excluded and the suite is the only candidate left. Refusing was
+    the right answer when we were blind; it is the wrong answer now that we can see, because
+    it threw away a perfectly good listing. What must never happen — the tower being stored
+    as the suite — is what is actually asserted here."""
     assert extract._size_of(
-        "1250 Broadway is a 807,000 SF tower. This 3,305 SF suite is available.") is None
+        "1250 Broadway is a 807,000 SF tower. This 3,305 SF suite is available.") == 3305
     # ...and when the listing does state its own size twice, we take it
     assert extract._size_of(
         "807,000 SF tower. This 3,305 SF suite. 3,305 SF available.") == 3305
+    # ...but where the building is NOT identifiable, two one-off candidates are still a
+    # coin-flip, and we still refuse rather than guess.
+    assert extract._size_of("3,305 SF. 807,000 SF.") is None
 
 
 def test_an_unqualified_rate_is_never_silently_called_yearly():
@@ -498,3 +507,30 @@ def test_html_entities_never_reach_a_fact_field():
     d = extract.from_wp_json(item, SRC, "mia")
     assert d and "&#" not in d["address"]
     assert "–" in d["address"] or "-" in d["address"]
+
+
+def test_a_tower_is_not_a_suite():
+    """Blanca's pages are Class A office TOWERS whose suite-level availability lives
+    off-site, so the biggest number on the page is the whole building. Nothing labels it
+    'Total SF' — it is said in prose — so the labelled pattern sailed past it and we stored
+    1450 Brickell as a 625,800 SF suite. A 625,800 SF 'space for lease' is not a listing,
+    it is a skyscraper."""
+    txt = ("1450 Brickell is a 35-story, 625,800 RSF Class A office tower located at the "
+           "entrance to Brickell Avenue. 625,800 SF total. Currently available: 17,881 SF "
+           "of contiguous space on floors 20-21. 17,881 SF available now.")
+    d = extract.from_html_facts(txt, "https://blancacre.com/properties/1450-brickell",
+                                SRC, "mia")
+    assert d, "the facts rung gave up on a page that plainly states a size"
+    assert d.get("total_building_sf") == 625800, "the tower is the BUILDING"
+    assert d.get("size_sf") != 625800, "stored a 35-story tower as the leasable suite"
+    assert d.get("size_sf") == 17881, f"the available suite is 17,881 SF, got {d.get('size_sf')}"
+
+
+def test_building_prose_variants_are_all_read_as_the_building():
+    for txt, want in [
+        ("a 300,000 SF office building at 1 Main St", 300000),
+        ("2601 S Bayshore, a 311,755 square-foot tower", 311755),
+        ("the 80,414 SF corporate centre", 80414),
+        ("52,333 RSF Class A property", 52333),
+    ]:
+        assert extract._building_sf(txt) == want, f"missed the building in: {txt!r}"

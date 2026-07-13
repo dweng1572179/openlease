@@ -447,16 +447,28 @@ _SIZE_LABEL = re.compile(
 _TOTAL_LABEL = re.compile(
     r"(?:property\s+total\s+sf|total\s+sf|building\s+(?:size|sf)|total\s+building)"
     r"\s*[:\-\u2013]?\s*([\d][\d,]{2,9})", re.I)
+# The building said in PROSE rather than in a stats table. Blanca's pages are Class A office
+# TOWERS, and their availabilities live off-site \u2014 so the biggest number on the page is the
+# whole tower: "1450 Brickell is a 35-story, 625,800 RSF Class A office tower". Nothing
+# labels that "Total SF", so the labelled pattern above sailed past it and we filed a
+# 625,800 SF SUITE. A figure that the sentence itself calls a tower/building/campus is the
+# BUILDING, and is never what a tenant is renting. (Note RSF \u2014 "rentable square feet" \u2014 which
+# _SIZE deliberately does not match, but which appears alongside a plain "SF" restatement.)
+_BUILDING_DESC = re.compile(
+    r"([\d][\d,]{2,9})\s*(?:\+/-\s*)?(?:R?SF\b|sq\.?\s?ft\b|square[\s-]?f(?:oot|eet))"
+    r"[\s,\-\u2013]*(?:\w+[\s,\-\u2013]+){0,3}?"
+    r"(?:building|tower|property|centre|center|campus|complex|development|facility)\b", re.I)
 _AVAIL_RANGE = re.compile(
     r"(?:available[^.]{0,24}?|spaces?\s+available[^.]{0,12}?)"
     r"([\d][\d,]{2,8})\s*[-\u2013]\s*([\d][\d,]{2,8})\s*(?:SF\b|sq)?", re.I)
 
 
 def _building_sf(text: str) -> int | None:
-    for m in _TOTAL_LABEL.finditer(text):
-        v = _num(m.group(1))
-        if _MIN_SF <= v <= _MAX_SF:
-            return int(v)
+    for pat in (_TOTAL_LABEL, _BUILDING_DESC):
+        for m in pat.finditer(text):
+            v = _num(m.group(1))
+            if _MIN_SF <= v <= _MAX_SF:
+                return int(v)
     return None
 
 
