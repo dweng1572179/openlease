@@ -23,28 +23,25 @@ monthly budget you set, and every response is cached — you never pay for the s
 **Nothing is required.** A rules-based parser handles search with no Anthropic key; it
 understands far less, and it says so, loudly, rather than quietly dropping half your query.
 
-### The honest caveat on that table
+### How the crawler gets facts without a key
 
-The crawler runs with no key, but what it *gets* depends on what the site publishes.
+Broker sites publish inventory in one of three ways, and the crawler descends only as far
+as it has to:
 
-A site with a **structured feed** (its own WordPress REST API) hands over address,
-neighborhood, property type, broker and a link back — no key, no scraping. A site that
-publishes its listings only as **prose on an HTML page** gives you nothing until you bring
-an `ANTHROPIC_API_KEY`, because reading prose is what the LLM rung is for. **Size and asking
-rent are almost always in the prose.** So keyless you get leads with addresses and map pins;
-you generally do not get rents.
+1. **A structured feed** — the site's own WordPress REST API. Address, broker, a link back.
+   No scraping at all.
+2. **JSON-LD** — a `<script type="application/ld+json">` block on the detail page.
+3. **The page's own text** — "1,500 SF", "$95/SF/yr". Most broker sites are only this.
 
-Measured, on the shipped allowlist (`app/data/sources.yml`), with zero keys:
+Rung 3 is what makes it work with no key, and it's the one people skip. Reading a number
+off a page is not a per-site scraper — there's no CSS selector anywhere in this codebase, it
+works on any site, and a redesign costs nothing. And a number is a *fact*: we're not copying
+anyone's writing. **Size and asking rent live in that text almost everywhere**, so without
+this rung a keyless crawl produces a link directory — addresses with no SF and no ask, which
+a search for "~1,500 SF under $8k/mo" cannot filter on at all.
 
-| Metro | Keyless crawl | Why |
-|---|---|---|
-| **New York** | ✅ RIPCO (833 listings) + Metro Manhattan (498) | both publish a WordPress feed |
-| **Miami** | ✅ Terranova, Metro 1 | WordPress feed / JSON-LD |
-| **Los Angeles** | ❌ nothing | all three sources are HTML-only — they need the LLM rung |
-| **Chicago** | ❌ nothing | same |
-
-That is a property of those brokers' websites, not of the crawler. NYC additionally has the
-storefront-vacancy feed below, which needs no key and no crawling at all.
+An `ANTHROPIC_API_KEY` adds a fourth rung for pages too unstructured for any of the above.
+It is an improvement, not a requirement.
 
 ## Run it
 
