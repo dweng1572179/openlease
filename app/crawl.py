@@ -543,6 +543,18 @@ def crawl_source(src: dict, metro: str, limit: int = 100) -> list[dict]:
             continue
         # Descend only as far as we have to: JSON-LD -> facts-from-text -> the LLM.
         d = extract.from_jsonld(body, url, src, metro)
+        if d and not (d.get("size_sf") or d.get("asking_rent")):
+            # A rung that "worked" but produced no SIZE and no ASK has not actually given
+            # us a listing — the hard filter runs on exactly those two fields, so the row
+            # is invisible to every query that matters. Most real-estate JSON-LD is Yoast
+            # SEO boilerplate with an address and nothing else, which is why Miami came
+            # back with 14 listings and zero sizes. Take the address it found, and go get
+            # the facts from the page's own text.
+            facts = extract.from_html_facts(body, url, src, metro)
+            if facts:
+                d.update({k: v for k, v in facts.items()
+                          if k in _FACT_KEYS and v and not d.get(k)})
+                d["our_description"] = extract.describe(d)
         if not d:
             # Rung 3c, keyless. Most of these sites publish no feed and no real-estate
             # JSON-LD, so without this the ONLY way to get a size or a rent was the paid

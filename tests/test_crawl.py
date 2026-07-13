@@ -776,3 +776,30 @@ def test_the_detail_pass_never_overwrites_what_the_feed_already_said():
              "source_url": "https://x.test/1", "size_sf": 1500, "asking_rent": 95.0}]
     crawl._fill_facts_from_detail_pages(recs, {"key": "x", "name": "X"})
     assert recs[0]["size_sf"] == 1500 and recs[0]["asking_rent"] == 95.0   # untouched
+
+
+def test_a_rung_that_finds_no_size_and_no_ask_has_not_found_a_listing(monkeypatch, isolated_db):
+    """The hard filter runs on SIZE and RENT. A rung that "worked" but produced neither has
+    given us a row invisible to every query that matters. Most real-estate JSON-LD is Yoast
+    SEO boilerplate — an address and nothing else — which is why Miami came back with 14
+    listings and ZERO sizes. Take the address it found, then go get the facts from the page."""
+    page = ("<html><h1>2618 NW 2nd Ave</h1>"
+            "<script type=\"application/ld+json\">"
+            '{"@type":"Place","address":{"streetAddress":"2618 NW 2nd Ave",'
+            '"addressLocality":"Wynwood"}}</script>'
+            "<p>1,500 SF of ground-floor retail. $95/SF/yr.</p></html>")
+    monkeypatch.setattr(crawl, "fetch", lambda url, src: page)
+    monkeypatch.setattr(crawl, "sitemap_urls",
+                        lambda base, src: ["https://m1.test/listings/2618-nw-2nd-ave"])
+    monkeypatch.setattr(crawl, "_maybe_geocode", lambda d: None)
+    monkeypatch.setattr(crawl, "_seen_recently", lambda url: False)
+
+    src = {"key": "metro1", "name": "Metro 1", "url": "https://m1.test", "rung": "jsonld"}
+    out = crawl.crawl_source(src, "mia", limit=1)
+
+    assert len(out) == 1
+    d = out[0]
+    assert d["address"].startswith("2618 NW 2nd Ave")   # JSON-LD gave us this
+    assert d["size_sf"] == 1500                          # ...the page's text gave us these
+    assert d["asking_rent"] == 95.0
+    assert d["property_type"] == "retail"
