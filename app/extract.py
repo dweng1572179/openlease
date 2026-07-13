@@ -455,8 +455,9 @@ def _size_decoyed(text: str, at: int) -> bool:
 # repeated one is the BUILDING, so "most repeated" picked 125,514 SF as the size of a
 # 9,358 SF unit. These labels are ordinary CRE vocabulary, not one site's markup.
 _TOTAL_LABEL = re.compile(
-    r"(?:property\s+total\s+sf|total\s+sf|building\s+(?:size|sf)|total\s+building)"
-    r"\s*[:\-\u2013]?\s*([\d][\d,]{2,9})", re.I)
+    r"(?:property\s+total\s+sf|total\s+sf|total\s+square\s+f(?:eet|ootage)"
+    r"|building\s+(?:size|sf)|total\s+building)"
+    r"\s*[:\-\u2013]?\s*(?:\u00b1\s*)?([\d][\d,]{2,9})", re.I)
 # The building said in PROSE rather than in a stats table. Blanca's pages are Class A office
 # TOWERS, and their availabilities live off-site \u2014 so the biggest number on the page is the
 # whole tower: "1450 Brickell is a 35-story, 625,800 RSF Class A office tower". Nothing
@@ -471,6 +472,20 @@ _BUILDING_DESC = re.compile(
 _AVAIL_RANGE = re.compile(
     r"(?:available[^.]{0,24}?|spaces?\s+available[^.]{0,12}?)"
     r"([\d][\d,]{2,8})\s*[-\u2013]\s*([\d][\d,]{2,8})\s*(?:SF\b|sq)?", re.I)
+
+# A multi-tenant building that lists its units one by one instead of as a range. RIPCO's
+# pages read:
+#   "Total Square Feet \u00b19,113 SF ... Proposed Divisions Retail A: 1,608 SF Retail B: 2,450
+#    SF Retail C: 2,286 SF Retail D: 2,769 SF"
+# Those four ARE the leasable spaces \u2014 the whole reason a tenant is on the page. But no
+# figure repeats and there is more than one, so _size_of correctly refused to guess and the
+# listing went in with no size at all: invisible to every size filter, across ~294 RIPCO
+# listings. The refusal was right; the answer was sitting under a header saying what these
+# numbers are.
+_DIVISIONS_HDR = re.compile(
+    r"(?:proposed\s+divisions?|available\s+spaces?|spaces?\s+available|suites?\s+available"
+    r"|divisions?)\b", re.I)
+_DIVISIONS_WINDOW = 340
 
 
 def _building_sf(text: str) -> int | None:
@@ -491,6 +506,23 @@ def _available_range(text: str) -> tuple[int, int] | None:
         if _MIN_SF <= lo <= hi <= _MAX_SF:
             return int(lo), int(hi)
     return None
+
+
+def _divisions(text: str) -> list[int] | None:
+    """The units a multi-tenant building lists one by one. See _DIVISIONS_HDR.
+
+    Only figures INSIDE the divisions block count — the header tells us what these numbers
+    are, which is exactly the knowledge _size_of lacks when it refuses to pick between four
+    one-off candidates. Outside that block we go back to refusing.
+    """
+    m = _DIVISIONS_HDR.search(text)
+    if not m:
+        return None
+    block = text[m.end():m.end() + _DIVISIONS_WINDOW]
+    sizes = [_num(x.group(1)) for x in _SIZE.finditer(block)
+             if not _size_decoyed(block, x.start())]
+    sizes = sorted({int(s) for s in sizes if _MIN_SF <= s <= _MAX_SF})
+    return sizes if len(sizes) >= 2 else None
 
 
 def _size_of(text: str) -> int | None:
@@ -703,6 +735,7 @@ def from_html_facts(html: str, url: str, src: dict, metro: str) -> dict | None:
         d["total_building_sf"] = total     # the BUILDING. Never the suite.
 
     rng = _available_range(txt)
+    divs = _divisions(txt)
     if rng:
         # A multi-tenant building leases a RANGE. The largest contiguous unit is what a
         # tenant with a size in mind is actually shopping for, so that is `size_sf` — and the
@@ -710,6 +743,10 @@ def from_html_facts(html: str, url: str, src: dict, metro: str) -> dict | None:
         # question a broker asks constantly.
         d["divisible_min_sf"], d["divisible_max_sf"] = rng
         d["size_sf"] = rng[1]
+    elif divs:
+        # Same building, units listed one by one instead of as a range. Same answer.
+        d["divisible_min_sf"], d["divisible_max_sf"] = divs[0], divs[-1]
+        d["size_sf"] = divs[-1]
     else:
         size = _size_of(txt)
         if size:

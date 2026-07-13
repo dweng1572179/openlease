@@ -580,3 +580,30 @@ def test_a_tower_with_no_stated_availability_is_still_a_listing():
     assert d and d["total_building_sf"] == 625800
     assert d.get("size_sf") is None
     assert d["our_description"]
+
+
+def test_a_building_that_lists_its_units_one_by_one():
+    """RIPCO publishes the leasable spaces under a header instead of as a range:
+      "Total Square Feet ±9,113 SF ... Proposed Divisions Retail A: 1,608 SF
+       Retail B: 2,450 SF Retail C: 2,286 SF Retail D: 2,769 SF"
+    Those four ARE what a tenant is on the page for. But no figure repeats and there is more
+    than one, so _size_of correctly refused to guess — and the listing went in with NO size
+    at all, invisible to every size filter, across ~294 RIPCO listings. The refusal was
+    right; the answer was sitting under a header saying what these numbers are."""
+    txt = ("Key Details Available Spaces 4 Total Square Feet ±9,113 SF Asking Rent Upon "
+           "request Proposed Divisions Retail A: 1,608 SF Retail B: 2,450 SF "
+           "Retail C: 2,286 SF Retail D: 2,769 SF All logical divisions considered")
+    d = extract.from_html_facts(
+        txt, "https://www.ripcony.com/property-listings/1150-ne-125th-st-north-miami-fl/",
+        SRC, "mia")
+    assert d, "a page listing four leasable suites produced no listing"
+    assert d["total_building_sf"] == 9113, "the ± total is the BUILDING"
+    assert d["size_sf"] == 2769, "size_sf is the largest unit a tenant could take"
+    assert d["divisible_min_sf"] == 1608 and d["divisible_max_sf"] == 2769
+
+
+def test_divisions_needs_at_least_two_units_and_its_own_header():
+    # one figure under the header is not a division list — fall back to the usual rules
+    assert extract._divisions("Proposed Divisions Retail A: 1,608 SF") is None
+    # and figures with no header are not divisions at all
+    assert extract._divisions("1,608 SF 2,450 SF 2,286 SF") is None
