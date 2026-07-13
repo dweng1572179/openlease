@@ -15,6 +15,7 @@ Whatever the path, we store FACTS, never expression:
 import json
 import logging
 import re
+from html import unescape
 
 from pydantic import BaseModel
 
@@ -125,8 +126,31 @@ class ListingExtract(BaseModel):
         return d
 
 
+# Space that is already gone. Brokers keep a leased deal on the site as a trophy — five of
+# Terranova's nine Miami "listings" were titled "... – Leased" — and a corpus that answers
+# "what can I rent in Wynwood" with space somebody else already rented is not a search
+# engine, it is a scrapbook. The marker shows up in the title AND in the URL slug
+# (/property/300-miracle-mile-leased), so both are checked. We drop the row rather than
+# storing a status nobody would remember to filter on.
+_OFF_MARKET = re.compile(
+    r"\b(leased|sold|off[\s\-]?market|no longer available|under contract|"
+    r"in contract|rented|withdrawn)\b", re.I)
+
+
+def off_market(*texts: str | None) -> bool:
+    return any(_OFF_MARKET.search(t) for t in texts if t)
+
+
 def _clean(d: dict, src: dict, url: str, metro: str) -> dict | None:
     if not d.get("address"):
+        return None
+    # A feed hands us its title HTML-escaped ("105 Miracle Mile &#8211; Leased"), and an
+    # address is a FACT: it does not get to carry &#8211; into the database, the map pin, or
+    # the geocoder query (which is one reason these rows never pinned).
+    for k in ("address", "neighborhood", "borough", "floor"):
+        if isinstance(d.get(k), str):
+            d[k] = unescape(d[k]).strip()
+    if off_market(d.get("address"), url):
         return None
     d["source"] = src["key"]
     d["source_url"] = url
@@ -145,7 +169,9 @@ def from_wp_json(item: dict, src: dict, metro: str) -> dict | None:
     meta = item.get("acf") or item.get("meta") or {}
     title = (item.get("title") or {}).get("rendered", "") if isinstance(item.get("title"), dict) \
         else (item.get("title") or "")
-    title = re.sub(r"<[^>]+>", "", title).strip()
+    title = unescape(re.sub(r"<[^>]+>", "", title)).strip()
+    if off_market(title, item.get("slug") or ""):
+        return None      # the deal is done — see _OFF_MARKET
 
     def pick(*keys):
         for k in keys:
@@ -211,14 +237,36 @@ _LD = re.compile(r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</s
                  re.S | re.I)
 
 
+# The JSON-LD node has to BE a property. Every one of these sites also emits an
+# Organization / RealEstateAgent node carrying the BROKERAGE'S OWN OFFICE address, on every
+# page including the blog — and a rung that takes an address from any node with an address
+# stored Metro 1's Wynwood headquarters five times and called it Miami's inventory. An
+# allowlist, not a denylist: an unrecognized @type is not a listing, and refusing costs us
+# nothing because the caller then descends to from_html_facts, which reads the page itself.
+_LISTING_TYPES = {
+    "realestatelisting", "product", "offer", "place", "accommodation", "apartment",
+    "house", "residence", "singlefamilyresidence", "room", "suite", "commercialproperty",
+    "landmarksorhistoricalbuildings", "selfstorage", "warehouse",
+}
+
+
+def _is_listing_node(node: dict) -> bool:
+    t = node.get("@type") or node.get("type") or ""
+    types = t if isinstance(t, list) else [t]
+    return any(str(x).lower() in _LISTING_TYPES for x in types)
+
+
 def from_jsonld(html: str, url: str, src: dict, metro: str) -> dict | None:
     for blob in _LD.findall(html):
         try:
             data = json.loads(blob)
         except json.JSONDecodeError:
             continue
-        for node in (data if isinstance(data, list) else [data]):
-            if not isinstance(node, dict):
+        nodes = data if isinstance(data, list) else [data]
+        if isinstance(data, dict) and isinstance(data.get("@graph"), list):
+            nodes = data["@graph"]          # Yoast wraps everything in a @graph
+        for node in nodes:
+            if not isinstance(node, dict) or not _is_listing_node(node):
                 continue
             addr = node.get("address")
             if isinstance(addr, dict):

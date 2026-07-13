@@ -321,11 +321,23 @@ INVENTORY_RE = re.compile(r"propert|listing|space|availab|building|asset", re.I)
 # 4-second politeness delay each on 25 PDFs it could never extract a thing from. We only
 # ever want the HTML page.
 NOT_A_PAGE_RE = re.compile(r"\.(pdf|jpe?g|png|gif|webp|svg|docx?|xlsx?|pptx?|zip|mp4)$", re.I)
+# ...and not the newsroom. INVENTORY_RE is a SUBSTRING match, so it fires on the editorial
+# section of every broker site that writes about the market it sells into: "space" inside
+# /articles/creatingwellnessspace-s-, "building" inside
+# /articles/wynwood-nightclub-building-hits-the-market. Metro 1's entire Miami "inventory"
+# was three blog posts. An editorial path is never inventory, whatever words it contains,
+# so this is checked FIRST and wins.
+EDITORIAL_RE = re.compile(
+    r"/(articles?|news|blog|posts?|press|media|insights?|research|reports?|stories|"
+    r"team|people|staff|agents?|careers?|jobs|about|contact|privacy|terms|search)(/|$)", re.I)
 MAX_SITEMAP_CHILDREN = 12
 
 
 def is_listing_page(url: str) -> bool:
-    return bool(INVENTORY_RE.search(url)) and not NOT_A_PAGE_RE.search(url.split("?")[0])
+    path = url.split("?")[0]
+    if EDITORIAL_RE.search(path) or NOT_A_PAGE_RE.search(path):
+        return False
+    return bool(INVENTORY_RE.search(url))
 
 
 def sitemap_urls(base: str, src: dict) -> list[str]:

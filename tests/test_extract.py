@@ -425,3 +425,76 @@ def test_a_multi_tenant_building_has_no_single_size_and_the_page_says_so():
     assert d["size_sf"] == 9358                      # the largest unit you can lease
     assert (d["divisible_min_sf"], d["divisible_max_sf"]) == (5961, 9358)
     assert d["total_building_sf"] == 125514          # ...and the building, kept separately
+
+
+# --- the publisher's own office is not a listing ------------------------------
+#
+# Every one of these regressions shipped a real row into a real database. They are
+# written with the data that actually fooled us, not with a synthetic stand-in.
+
+def test_jsonld_ignores_the_brokerage_organization_node():
+    """Metro 1's Squarespace footer emits an Organization node carrying the FIRM'S OWN
+    Wynwood head office. The old rung took an address from any node that had one, so it
+    filed 120 NE 27th St as Miami inventory five times — three of them on blog posts."""
+    html = """<script type="application/ld+json">
+    {"@type":"Organization","name":"Metro 1","address":{"streetAddress":"120 Northeast 27th Street, Suite 2","addressLocality":"Miami"}}
+    </script>"""
+    assert extract.from_jsonld(html, "https://metro1.com/articles/x", SRC, "mia") is None
+
+
+def test_jsonld_still_reads_a_real_property_node():
+    """The allowlist must not throw the baby out: a RealEstateListing still parses."""
+    html = """<script type="application/ld+json">
+    {"@type":"RealEstateListing","address":{"streetAddress":"2618 NW 2nd Ave","addressLocality":"Miami"},
+     "floorSize":{"value":"1500"}}
+    </script>"""
+    d = extract.from_jsonld(html, "https://x.com/properties/2618", SRC, "mia")
+    assert d and d["size_sf"] == 1500
+    assert d["address"].startswith("2618 NW 2nd Ave")
+
+
+def test_jsonld_reads_a_yoast_graph():
+    """Yoast wraps every node in @graph — a listing site using it must still parse."""
+    html = """<script type="application/ld+json">
+    {"@context":"https://schema.org","@graph":[
+      {"@type":"WebSite","name":"Broker"},
+      {"@type":"Organization","address":{"streetAddress":"1 Broker Plaza"}},
+      {"@type":"Product","address":{"streetAddress":"350 Fifth Ave"},"floorSize":{"value":"2200"}}]}
+    </script>"""
+    d = extract.from_jsonld(html, "https://x.com/properties/350", SRC, "nyc")
+    assert d["size_sf"] == 2200
+    assert d["address"].startswith("350 Fifth Ave")   # not the broker's plaza
+
+
+# --- space that is already gone -----------------------------------------------
+
+def test_leased_listings_are_not_ingested():
+    """Terranova keeps closed deals on the site as trophies. Five of its nine Miami rows
+    were titled '... - Leased'. A search engine that answers with space somebody else
+    already rented is a scrapbook."""
+    for title, slug in [("105 Miracle Mile &#8211; Leased", "105-miracle-mile-leased"),
+                        ("300 Miracle Mile", "300-miracle-mile-leased"),
+                        ("221 Ocean Dr - SOLD", "221-ocean-dr")]:
+        item = {"title": {"rendered": title}, "slug": slug,
+                "link": f"https://terranovacorp.com/property/{slug}",
+                "acf": {"address": "105 Miracle Mile", "size": "2242"}}
+        assert extract.from_wp_json(item, SRC, "mia") is None, f"ingested a dead deal: {title}"
+
+
+def test_available_listing_survives_the_off_market_filter():
+    item = {"title": {"rendered": "308 Miracle Mile"}, "slug": "308-miracle-mile",
+            "link": "https://terranovacorp.com/property/308-miracle-mile/",
+            "acf": {"address": "308 Miracle Mile", "size": "2,242"}}
+    d = extract.from_wp_json(item, SRC, "mia")
+    assert d and d["size_sf"] == 2242
+
+
+def test_html_entities_never_reach_a_fact_field():
+    """A feed hands us its title escaped. An address carrying '&#8211;' is not an address:
+    it does not geocode, and it renders as mojibake on the map pin."""
+    item = {"title": {"rendered": "255 Alhambra Circle &#8211; Suite 400"},
+            "slug": "255-alhambra-circle", "link": "https://terranovacorp.com/property/255",
+            "acf": {"address": "255 Alhambra Circle &#8211; Suite 400"}}
+    d = extract.from_wp_json(item, SRC, "mia")
+    assert d and "&#" not in d["address"]
+    assert "–" in d["address"] or "-" in d["address"]

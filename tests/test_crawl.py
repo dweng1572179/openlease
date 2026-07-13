@@ -861,3 +861,26 @@ def test_a_section_scoped_source_does_not_pull_the_whole_firms_national_sitemap(
     urls = crawl.sitemap_urls("https://ay.test/web/los-angeles/properties-for-lease",
                               {"key": "avison_la"})
     assert urls == ["https://ay.test/web/los-angeles/properties/1"]
+
+
+def test_the_newsroom_is_not_inventory():
+    """INVENTORY_RE is a substring match, so it fires on the editorial section of every
+    broker who writes about the market they sell into: 'space' inside
+    /articles/creatingwellnessspace-s-, 'building' inside
+    /articles/wynwood-nightclub-building-hits-the-market. Metro 1's entire Miami
+    'inventory' was three blog posts."""
+    for url in ["https://www.metro1.com/articles/creatingwellnessspaces",
+                "https://www.metro1.com/articles/wynwood-nightclub-building-hits-the-market",
+                "https://www.metro1.com/articles/restaurants-fear-going-from-closed-to-space-for-lease",
+                "https://x.com/news/new-listing-in-soho",
+                "https://x.com/team/jane-doe", "https://x.com/insights/q3-office-report",
+                "https://x.com/properties/brochure.pdf"]:
+        assert not crawl.is_listing_page(url), f"the crawler thinks this is inventory: {url}"
+
+
+def test_real_listing_urls_still_pass():
+    for url in ["https://www.rexfordindustrial.com/property/chatsworth-industrial-park/",
+                "https://x.com/properties/123-main-st/",
+                "https://x.com/listings/450-park-ave",
+                "https://x.com/available-space/2618-nw-2nd-ave"]:
+        assert crawl.is_listing_page(url), f"the crawler dropped a real listing: {url}"

@@ -48,16 +48,26 @@ nyc:
     tier: stealth        # 403 to a plain fetch
 
 mia:
-  - key: metro1
-    name: Metro 1
-    url: https://metro1.com/listings
-    rung: jsonld
-    tier: default
-  - key: comras
-    name: The Comras Company
-    url: https://www.comras.com
-    rung: html
-    tier: default
+  # metro1 (Metro 1) removed 2026-07-12, on purpose, and this one is a JUDGMENT not a defect.
+  # Its site is Squarespace with NO inventory in the HTML at all: /listings is a 1.2MB shell
+  # whose listings arrive in an iframe from `looplink.metro1.com` — LoopLink, which is
+  # CoStar's white-label widget, i.e. CoStar's own infrastructure under a broker's CNAME.
+  # That host serves no robots.txt, so `allowed()` would fail OPEN and happily crawl it.
+  # We don't. A missing robots.txt on a broker's own site is fair to proceed on; a missing
+  # robots.txt on CoStar's is not consent, and CoStar v. CREXi is the exact fact pattern
+  # this project's rules are written against. Metro 1's inventory is only reachable through
+  # CoStar's pipes, so we do without it.
+  #
+  # What we DID store before catching this is the cautionary tale: every page on the site
+  # carries an Organization node in its JSON-LD, so the jsonld rung took the address off it
+  # and filed Metro 1's own Wynwood HEAD OFFICE as a listing — five times, three of them
+  # blog posts. That is what `_LISTING_TYPES` in extract.py and `EDITORIAL_RE` in crawl.py
+  # now exist to prevent.
+  #
+  # comras (The Comras Company) removed 2026-07-12: comras.com is a PARKED DOMAIN — it now
+  # serves hugedomains.com's "this domain is for sale" page. Not a bot-wall, not a robots
+  # refusal: the site is gone. A source that 200s with a sales page is worse than one that
+  # 404s, because the ladder happily descends it and extracts nothing.
   - key: terranova
     name: Terranova Corporation
     url: https://www.terranovacorp.com
