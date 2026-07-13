@@ -485,3 +485,36 @@ def chat_history(listing_id: int) -> list[dict]:
             "SELECT role, content, created_at FROM chat WHERE listing_id = ? ORDER BY id",
             (listing_id,)).fetchall()
     return [dict(r) for r in rows]
+
+
+# --- the enrichment the listing page shows (poi / transit_nearby are written by
+#     score.enrich and, until now, never read by anything) -------------------------------
+
+def nearby_pois(listing_id: int, per_category: int = 3) -> dict[str, list[dict]]:
+    """The closest few POIs in each category, with real distances. This is the enrichment
+    SpaceFinder puts on every listing page — and we were computing it, storing it, and
+    then never showing it."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT category, name, meters FROM poi WHERE listing_id = ? AND name IS NOT NULL "
+            "ORDER BY category, meters", (listing_id,)
+        ).fetchall()
+    out: dict[str, list[dict]] = {}
+    for r in rows:
+        bucket = out.setdefault(r["category"], [])
+        if len(bucket) < per_category:
+            bucket.append({"name": r["name"], "meters": int(r["meters"])})
+    return out
+
+
+def nearby_transit(listing_id: int, limit: int = 6) -> list[dict]:
+    """Nearest stations/stops, closest first. Rail before bus at equal distance — a subway
+    line is worth more to a tenant than a bus stop, and the Transit Score already says so."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT mode, route, name, meters FROM transit_nearby WHERE listing_id = ? "
+            "ORDER BY meters LIMIT ?", (listing_id, limit)
+        ).fetchall()
+    # `meters` is a REAL column — without the cast the page reads "210.0m", which is a
+    # false precision (the station is not located to the tenth of a metre).
+    return [dict(r) | {"meters": int(r["meters"])} for r in rows]

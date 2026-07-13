@@ -240,3 +240,32 @@ def test_a_failed_portfolio_add_says_so_instead_of_claiming_success(monkeypatch)
         assert bad.status_code == 500, bad.text
         assert "added" not in bad.text
         assert "couldn't add" in bad.text
+
+
+def test_the_listing_page_shows_the_evidence_behind_the_scores(monkeypatch):
+    """SpaceFinder puts the POIs, the nearest transit and the airport drive times on every
+    listing page — that enrichment IS the moat. We were computing all of it at ingest,
+    storing it in `poi` and `transit_nearby`, and then never reading either table. A Walk
+    Score with nothing behind it is an assertion; this is the evidence for it."""
+    from app import db, registry
+    from app.providers import osrm
+    monkeypatch.setattr(registry, "parcel_provider", lambda metro: None)
+    monkeypatch.setattr(osrm, "drive_minutes", lambda lat, lng, metro: {"JFK": 31.0, "LGA": 18.0})
+
+    with TestClient(app, follow_redirects=False) as c:
+        c.post("/login", data={"password": "test-pw"})
+        lid = db.save_listing(dict(source_url="t://evidence", metro="nyc",
+                                   address="350 5th Ave", lat=40.7484, lng=-73.9857,
+                                   walk_score=100, transit_score=100))
+        with db.get_conn() as conn:
+            conn.execute("INSERT INTO poi (listing_id, category, name, lat, lng, meters) "
+                         "VALUES (?,?,?,?,?,?)", (lid, "coffee", "Blue Bottle", 40.75, -73.98, 120))
+            conn.execute("INSERT INTO transit_nearby (listing_id, mode, route, name, meters) "
+                         "VALUES (?,?,?,?,?)", (lid, "rail", "B,D,F,M", "34 St-Herald Sq", 210))
+
+        r = c.get(f"/listings/{lid}")
+        assert r.status_code == 200
+        assert "Blue Bottle" in r.text and "120m" in r.text        # the POIs behind the score
+        assert "34 St-Herald Sq" in r.text and "210m" in r.text    # the stations behind it
+        assert "JFK" in r.text and "31 min" in r.text              # airport drive times
+        assert "no traffic" in r.text.lower()   # OSRM is free-flow — say so, don't imply live

@@ -1,15 +1,19 @@
 """The HTML surface. `/search` is the HTMX twin of `/api/search` — same pipeline, one
 call, so the two can never drift."""
 import json
+import logging
 
 from fastapi import Depends, Form, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from . import db
+from .config import settings
 from .app import app, require_auth, spend_ctx, templates
 from .models import METROS, to_api
 from .routes_search import SearchRequest, api_search
+
+log = logging.getLogger("openlease")
 
 
 @app.post("/search", response_class=HTMLResponse)
@@ -73,8 +77,6 @@ def listing_page(request: Request, listing_id: int, _=Depends(require_auth)):
         from . import registry
         prov = registry.parcel_provider(row["metro"])
         if prov:
-            import logging
-            log = logging.getLogger("openlease")
             try:
                 p = prov.lookup(row["address"], row.get("lat"), row.get("lng"))
             except Exception as e:  # noqa: BLE001 — a parcel API being down must not 500 the page
@@ -97,11 +99,25 @@ def listing_page(request: Request, listing_id: int, _=Depends(require_auth)):
                                  (p.parcel_id, listing_id))
                 parcel = db.get_parcel(p.parcel_id)
 
+    # The enrichment we already compute and store, and were never showing: the POIs behind
+    # the Walk Score, the stations behind the Transit Score, and the airport drive times.
+    # A number with nothing behind it is an assertion; this is the evidence for it.
+    airports: dict[str, float] = {}
+    if row.get("lat") is not None:
+        from .providers import osrm
+        try:
+            airports = osrm.drive_minutes(row["lat"], row["lng"], row["metro"])
+        except Exception as e:  # noqa: BLE001 — OSRM down must not 500 the page
+            log.warning("airport drive times failed for listing %s (%s): %s",
+                        listing_id, type(e).__name__, e)
+
     return templates.TemplateResponse(
         request, "listing.html",
         {"l": to_api(row), "metro_meta": METROS[row["metro"]],
          "parcel": parcel, "saved": db.is_saved(listing_id),
          "history": db.chat_history(listing_id), "listing_id": listing_id,
+         "pois": db.nearby_pois(listing_id), "transit": db.nearby_transit(listing_id),
+         "airports": airports, "google_maps_key": settings.google_maps_key,
          "portfolios": db.list_portfolios(), "ai_available": ai.available(), **spend_ctx()},
     )
 

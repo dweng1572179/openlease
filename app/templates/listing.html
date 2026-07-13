@@ -64,6 +64,17 @@
     </div>
     {% endif %}
 
+    {# Street View — the ONE thing GOOGLE_MAPS_KEY unlocks. Without a key the panel is
+       simply absent; nothing else on the page changes. (The Settings dashboard offered
+       this key and it did nothing at all until now.) #}
+    {% if google_maps_key and l.lat is not none %}
+    <div class="overflow-hidden rounded-lg border bg-white">
+      <iframe class="h-64 w-full" style="border:0" loading="lazy" allowfullscreen
+              referrerpolicy="no-referrer-when-downgrade"
+              src="https://www.google.com/maps/embed/v1/streetview?key={{ google_maps_key }}&location={{ l.lat }},{{ l.lng }}&heading=0&pitch=0&fov=90"></iframe>
+    </div>
+    {% endif %}
+
     {% block listing_extra %}
     {% if l.scoreBreakdown %}
     <div class="rounded-lg border bg-white p-4">
@@ -161,12 +172,70 @@
       {% endif %}
     </div>
 
+    {# The evidence behind the scores. We compute and store all of this at ingest and were
+       showing none of it — a Walk Score with nothing behind it is an assertion, not a fact. #}
+    {% if transit %}
+    <div class="rounded-lg border bg-white p-4 text-sm">
+      <h2 class="text-sm font-semibold mb-2">Transit</h2>
+      <ul class="space-y-1">
+        {% for t in transit %}
+        <li class="flex justify-between gap-3 text-xs">
+          <span class="truncate">
+            <span class="rounded bg-slate-100 px-1 text-[10px] uppercase">{{ t.mode }}</span>
+            {{ t.name }}{% if t.route %} <span class="text-slate-400">{{ t.route }}</span>{% endif %}
+          </span>
+          <span class="shrink-0 text-slate-400">{{ t.meters }}m</span>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {% if airports %}
+    <div class="rounded-lg border bg-white p-4 text-sm">
+      <h2 class="text-sm font-semibold mb-2">Airports</h2>
+      <ul class="space-y-1">
+        {% for code, mins in airports.items() %}
+        <li class="flex justify-between gap-3 text-xs">
+          <span>{{ code }}</span>
+          <span class="text-slate-400">{{ mins | round | int }} min</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {# OSRM is free-flow. Its Midtown->JFK is 31 min against a real 45-60. Say so. #}
+      <p class="mt-2 text-[10px] text-slate-400">Driving time with no traffic.</p>
+    </div>
+    {% endif %}
+
+    {% if pois %}
+    <div class="rounded-lg border bg-white p-4 text-sm">
+      <h2 class="text-sm font-semibold mb-2">Nearby</h2>
+      {% for cat, items in pois.items() %}
+      <p class="mt-2 text-[10px] uppercase tracking-wide text-slate-400">{{ cat }}</p>
+      <ul>
+        {% for p in items %}
+        <li class="flex justify-between gap-3 text-xs">
+          <span class="truncate">{{ p.name }}</span>
+          <span class="shrink-0 text-slate-400">{{ p.meters }}m</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% endfor %}
+    </div>
+    {% endif %}
+
     {% if l.brokerName or l.brokerFirm %}
     <div class="rounded-lg border bg-white p-4 text-sm">
       <h2 class="text-sm font-semibold mb-1">Broker</h2>
       <p>{{ l.brokerName or '' }}</p>
       <p class="text-xs text-slate-500">{{ l.brokerFirm or '' }}</p>
       {% if l.brokerPhone %}<p class="text-xs">{{ l.brokerPhone }}</p>{% endif %}
+      {% if l.brokerEmail %}<p class="text-xs">{{ l.brokerEmail }}</p>{% endif %}
+      {# Link the brochure on the broker's own server. Never mirror it. #}
+      {% if l.brochureUrl %}
+      <a href="{{ l.brochureUrl }}" target="_blank" rel="noopener"
+         class="mt-2 inline-block text-xs text-sky-600 hover:underline">brochure &nearr;</a>
+      {% endif %}
     </div>
     {% endif %}
   </aside>
