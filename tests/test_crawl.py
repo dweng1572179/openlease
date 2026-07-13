@@ -548,7 +548,12 @@ def test_crawl_does_not_score_inline_and_enrich_pending_paces_overpass(monkeypat
     monkeypatch.setattr(crawl, "crawl_source", lambda src, m, limit: recs)
     monkeypatch.setattr(crawl, "close", lambda: None)
     enrich_calls = []
-    monkeypatch.setattr(crawl.score, "enrich", lambda lid: enrich_calls.append(lid))
+    monkeypatch.setattr(crawl.score, "enrich",
+                        lambda lid, tile_pois=None: enrich_calls.append(lid))
+    # Overpass is now asked ONCE PER TILE, not once per listing — count the calls.
+    bbox_calls = []
+    monkeypatch.setattr(crawl.overpass, "pois_bbox",
+                        lambda s, w, n, e: bbox_calls.append((s, w, n, e)) or [{"x": 1}])
     sleeps = []
     monkeypatch.setattr(crawl.time, "sleep", lambda s: sleeps.append(s))
 
@@ -556,10 +561,32 @@ def test_crawl_does_not_score_inline_and_enrich_pending_paces_overpass(monkeypat
     assert stats["saved"] == 2 and stats["no_pin"] == 0
     assert enrich_calls == [], "the crawl must not score inline — that is what throttled it"
 
-    # ...and the separate pass DOES score, and DOES pace itself between calls
+    # ...and the separate pass DOES score, and DOES pace itself between Overpass calls
     n = crawl.enrich_pending()
     assert n == 2 and len(enrich_calls) == 2
-    assert sleeps.count(settings.overpass_pace_seconds) == 2
+    assert len(bbox_calls) <= 2, "one Overpass call per TILE, never one per listing"
+    assert sleeps, "enrich_pending must still pace itself between Overpass calls"
+
+
+def test_two_listings_on_the_same_block_share_one_overpass_call(monkeypatch, isolated_db):
+    """The point of the tiling. 242 of our listings sit inside Manhattan and Brooklyn, each
+    previously pulling its own ~6,000-POI circle that almost entirely overlapped its
+    neighbours'. That is 345 requests for about 40 requests' worth of distinct data — it
+    took hours, and it made a free public mirror start answering 406 and 504."""
+    from app.db import save_listing
+    for i in range(8):                                  # 8 listings, one city block apart
+        save_listing({"address": f"{i} Main St", "metro": "nyc", "source": "x",
+                      "source_url": f"https://x.example.com/{i}",
+                      "lat": 40.7488 + i * 0.0002, "lng": -73.9854 + i * 0.0002})
+    bbox_calls = []
+    monkeypatch.setattr(crawl.overpass, "pois_bbox",
+                        lambda s, w, n, e: bbox_calls.append((s, w, n, e)) or [{"x": 1}])
+    monkeypatch.setattr(crawl.score, "enrich", lambda lid, tile_pois=None: None)
+    monkeypatch.setattr(crawl.time, "sleep", lambda s: None)
+
+    crawl.enrich_pending()
+    assert len(bbox_calls) == 1, (
+        f"8 listings on one block asked Overpass {len(bbox_calls)} times — they share a tile")
 
 
 def test_overpass_failure_is_a_loud_skip_never_a_crash_never_a_0(monkeypatch, isolated_db, caplog):

@@ -134,15 +134,32 @@ def transit_score(lat: float, lng: float, pois: list[dict],
     return min(100, round(scaled)), nearby[:8]
 
 
-def enrich(listing_id: int) -> dict:
+def enrich(listing_id: int, tile_pois: list[dict] | None = None) -> dict:
     """Fetch POIs once, score, persist. Raises OverpassEmpty rather than storing a 0 —
     a listing with no score is honest; a listing scored 0 because the mirror was wrong
-    is a lie the UI can't detect."""
+    is a lie the UI can't detect.
+
+    `tile_pois` is a pre-fetched SUPERSET covering this listing (see overpass.pois_bbox):
+    a bulk ingest fetches one rectangle for a whole neighbourhood instead of one circle per
+    listing. We filter it back down to RADIUS_M here, which is what makes the two paths
+    produce the identical score rather than merely a similar one.
+    """
     row = get_listing(listing_id)
     if not row or row.get("lat") is None:
         return {}
     lat, lng = row["lat"], row["lng"]
-    ps = overpass.pois(lat, lng)                       # raises OverpassEmpty on failure
+    if tile_pois is None:
+        ps = overpass.pois(lat, lng)                  # raises OverpassEmpty on failure
+    else:
+        ps = [p for p in tile_pois
+              if haversine_m(lat, lng, p["lat"], p["lng"]) <= overpass.RADIUS_M]
+        if not ps:
+            # The tile came back full but nothing is within 1.5 miles of THIS listing. That
+            # is the same claim overpass.pois refuses to make: a real address always has
+            # something. Far likelier the pin is wrong or the tile didn't cover it.
+            raise overpass.OverpassEmpty(
+                f"listing {listing_id} at {lat},{lng} has no POI within {overpass.RADIUS_M}m "
+                "of it in its tile — refusing to score it 0")
     ws, breakdown = walk_score(lat, lng, ps)
     ts, nearby = transit_score(lat, lng, ps, rail.stations(row["metro"]))
 

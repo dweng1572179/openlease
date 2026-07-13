@@ -181,3 +181,30 @@ def test_when_one_mirror_has_had_enough_we_try_the_other(monkeypatch, isolated_d
     assert got and got[0]["category"] == "coffee"
     assert "overpass-api.de" in hosts and "overpass.kumi.systems" in hosts
     assert hosts[-1] == "overpass.kumi.systems", "the fallback is what finally answered"
+
+
+def test_a_tile_scores_identically_to_a_circle(monkeypatch):
+    """The tiled ingest is a performance change, NOT an accuracy trade. Walk Score's decay
+    is exactly 0 beyond RADIUS_M, so a tile padded by RADIUS_M contains every POI that can
+    affect any listing inside it — and score.enrich filters back down to that radius. The
+    two paths must therefore agree EXACTLY, not approximately. If they ever don't, the
+    tiling is silently rewriting scores across the whole corpus."""
+    import math as _m
+
+    from app import score
+
+    lat, lng = 40.7488, -73.9854
+    # POIs at a spread of distances, including some that are inside the padded tile but
+    # OUTSIDE the 1.5-mile radius — exactly the ones the filter has to remove.
+    def at(dn, de):
+        return {"category": "restaurants", "name": f"r{dn}{de}", "route_refs": [],
+                "lat": lat + dn / 111_320,
+                "lng": lng + de / (111_320 * _m.cos(_m.radians(lat)))}
+
+    circle = [at(100, 0), at(0, 400), at(800, 800)]          # all within 2414m
+    tile = circle + [at(3000, 0), at(0, 4000), at(2500, 2500)]  # + POIs the tile sweeps in
+
+    near = [p for p in tile
+            if score.haversine_m(lat, lng, p["lat"], p["lng"]) <= overpass.RADIUS_M]
+    assert len(near) == len(circle), "the radius filter kept a POI it should have dropped"
+    assert score.walk_score(lat, lng, tile if False else near) == score.walk_score(lat, lng, circle)

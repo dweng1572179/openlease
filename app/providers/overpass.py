@@ -67,15 +67,44 @@ def _query(lat: float, lng: float) -> str:
     return f"[out:json][timeout:120];\n({chr(10).join(parts)}\n);\nout center tags;"
 
 
+def _query_bbox(s: float, w: float, n: float, e: float) -> str:
+    parts = [f'nwr({s},{w},{n},{e})[{key}~"^({"|".join(vals)})$"];'
+             for _cat, (key, vals) in CATEGORIES.items()]
+    parts.append(f"nwr({s},{w},{n},{e})[highway=bus_stop];")
+    return f"[out:json][timeout:180];\n({chr(10).join(parts)}\n);\nout center tags;"
+
+
+def pois_bbox(s: float, w: float, n: float, e: float) -> list[dict]:
+    """Every POI in a rectangle, in ONE call. This is how a bulk ingest should ask.
+
+    `pois()` asks per listing, and our listings CLUSTER — 242 of them inside Manhattan and
+    Brooklyn, each pulling ~6,000 POIs from a 1.5-mile circle that almost entirely overlaps
+    its neighbours'. That is 345 requests for maybe 40 requests' worth of distinct data, it
+    took hours, and it made a free public mirror start answering 406 and 504 — which is
+    the mirror telling us, correctly, that we are being rude.
+
+    This is not an approximation. Walk Score's decay is exactly 0 beyond RADIUS_M, so a
+    caller who expands its tile by RADIUS_M on every side and then filters each listing's
+    POIs back down to that radius (score.enrich does) computes the IDENTICAL score.
+    """
+    return _run(_query_bbox(s, w, n, e), {"bbox": [round(x, 4) for x in (s, w, n, e)]},
+                f"bbox {s:.3f},{w:.3f},{n:.3f},{e:.3f}")
+
+
 def pois(lat: float, lng: float) -> list[dict]:
-    """One call, every category. Cached forever (cost 0 — Overpass is free)."""
+    """One call, every category, around one point. Cached forever (cost 0 — Overpass is
+    free). For a bulk ingest prefer `pois_bbox` — see the note there."""
+    return _run(_query(lat, lng), {"lat": round(lat, 5), "lng": round(lng, 5)},
+                f"{lat},{lng}")
+
+
+def _run(q: str, key: dict, what: str) -> list[dict]:
     host = httpx.URL(settings.overpass_url).host
     if host not in ALLOWED_HOSTS:
         raise RuntimeError(
             f"{host} is not an allowlisted Overpass mirror {ALLOWED_HOSTS}. "
             "overpass.osm.ch in particular returns 200 + zero elements for US coords."
         )
-    q = _query(lat, lng)
 
     def fetch():
         # 406/429/504 from a public Overpass mirror is soft rate-limiting, not a bad
@@ -121,11 +150,11 @@ def pois(lat: float, lng: float) -> list[dict]:
             last.raise_for_status()
         raise RuntimeError(f"every allowlisted Overpass mirror refused: {last}")
 
-    data = cached("overpass", "interpreter", {"lat": round(lat, 5), "lng": round(lng, 5)}, fetch)
+    data = cached("overpass", "interpreter", key, fetch)
     els = data.get("elements", [])
     if not els:
         raise OverpassEmpty(
-            f"Overpass returned zero elements for {lat},{lng}. Treating this as a FAILURE — "
+            f"Overpass returned zero elements for {what}. Treating this as a FAILURE — "
             "a real address always has something within 1.5 miles. Check the mirror."
         )
     return [_normalize(e) for e in els if _normalize(e)]

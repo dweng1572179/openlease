@@ -16,6 +16,7 @@ On 8GB: exactly ONE long-lived stealth browser session per run. Never call the o
 StealthyFetcher.fetch() in a loop — it launches and kills a Chromium per call.
 """
 import logging
+import math
 import re
 import time
 import urllib.robotparser
@@ -28,6 +29,7 @@ from . import extract, registry, score
 from .config import settings
 from .db import get_conn, save_listing
 from .models import METROS
+from .providers import overpass
 
 log = logging.getLogger("openlease")
 
@@ -331,6 +333,10 @@ EDITORIAL_RE = re.compile(
     r"/(articles?|news|blog|posts?|press|media|insights?|research|reports?|stories|"
     r"team|people|staff|agents?|careers?|jobs|about|contact|privacy|terms|search)(/|$)", re.I)
 MAX_SITEMAP_CHILDREN = 12
+# ~3.3km. Big enough that a dense metro collapses into a handful of Overpass calls;
+# small enough that one tile's response (the cell plus a 2,414m pad on each side) stays
+# a size a public mirror will actually serve.
+TILE_DEG = 0.03
 
 
 def is_listing_page(url: str) -> bool:
@@ -718,18 +724,46 @@ def enrich_pending(limit: int = 500) -> int:
     Walk Score (car-dependent), and a corpus of fake zeros is worse than an empty column.
     """
     with get_conn() as conn:
-        ids = [r["id"] for r in conn.execute(
-            "SELECT id FROM listing WHERE lat IS NOT NULL AND walk_score IS NULL LIMIT ?",
-            (limit,)).fetchall()]
+        rows = [dict(r) for r in conn.execute(
+            "SELECT id, lat, lng FROM listing WHERE lat IS NOT NULL AND walk_score IS NULL "
+            "LIMIT ?", (limit,)).fetchall()]
+
+    # Listings CLUSTER. Asking Overpass for a 1.5-mile circle around each of 345 of them —
+    # 242 inside Manhattan and Brooklyn alone — is 345 requests for about 40 requests' worth
+    # of distinct data. It took hours and made the mirror start answering 406 and 504, which
+    # is a free public service telling us we are being rude. So: bucket them into tiles, ask
+    # once per tile, and score every listing in the tile from that one answer.
+    tiles: dict[tuple[int, int], list[dict]] = {}
+    for r in rows:
+        tiles.setdefault((int(r["lat"] // TILE_DEG), int(r["lng"] // TILE_DEG)), []).append(r)
+    log.info("enriching %d listings in %d tiles (was 1 Overpass call each)",
+             len(rows), len(tiles))
+
     done = 0
-    for lid in ids:
+    for (ty, tx), members in tiles.items():
+        s, w = ty * TILE_DEG, tx * TILE_DEG
+        n, e = s + TILE_DEG, w + TILE_DEG
+        # Pad by the Walk Score radius on every side, so the tile provably contains every
+        # POI that can affect any listing inside it. This is what makes the tiled score
+        # IDENTICAL to the per-listing one rather than merely close: score.enrich filters
+        # each listing's POIs back to RADIUS_M, and decay() is exactly 0 beyond it.
+        lat_pad = overpass.RADIUS_M / 111_320
+        lng_pad = overpass.RADIUS_M / (111_320 * max(0.2, math.cos(math.radians(s))))
         try:
-            score.enrich(lid)
-            done += 1
-        except Exception as e:  # noqa: BLE001
-            log.warning("scoring failed for listing %s: %s: %s", lid, type(e).__name__, e)
+            tile_pois = overpass.pois_bbox(s - lat_pad, w - lng_pad, n + lat_pad, e + lng_pad)
+        except Exception as ex:  # noqa: BLE001
+            log.warning("tile %s,%s failed (%s: %s) — %d listings stay unscored, NOT zero",
+                        ty, tx, type(ex).__name__, ex, len(members))
+            continue
+        for r in members:
+            try:
+                score.enrich(r["id"], tile_pois=tile_pois)
+                done += 1
+            except Exception as ex:  # noqa: BLE001
+                log.warning("scoring failed for listing %s: %s: %s",
+                            r["id"], type(ex).__name__, ex)
         time.sleep(settings.overpass_pace_seconds)
-    log.info("enriched %d/%d pending listings", done, len(ids))
+    log.info("enriched %d/%d pending listings", done, len(rows))
     embed_pending()
     return done
 
