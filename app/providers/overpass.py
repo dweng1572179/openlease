@@ -114,15 +114,18 @@ def _run(q: str, key: dict, what: str) -> list[dict]:
         # of plausible-looking, uniformly-low Walk Scores). Accept is explicit: some mirrors
         # 406 a POST that doesn't state what it wants back.
         #
-        # And when a mirror has had enough of us, try the OTHER one. That is the entire
-        # reason two are allowlisted, and the retry loop was only ever asking the first.
-        # The configured mirror is tried first; the rest of the allowlist is the fallback.
+        # And when a mirror has had enough of us, try the OTHER one — BEFORE sleeping, not
+        # after giving up on the first. The loops used to nest the other way round: all four
+        # backoffs against one mirror (8+16+32+64 = two minutes of sleeping) before the
+        # second mirror was asked at all. A 406 comes back instantly and means "not now" —
+        # so the free, immediate move is to ask the other mirror, and only sleep once BOTH
+        # have refused. That is the entire reason two are allowlisted.
         host = httpx.URL(settings.overpass_url).host
         mirrors = [settings.overpass_url] + [
             f"https://{h}/api/interpreter" for h in ALLOWED_HOSTS if h != host]
         last = None
-        for mirror in mirrors:
-            for attempt in range(RETRIES):
+        for attempt in range(RETRIES):
+            for mirror in mirrors:
                 try:
                     r = httpx.post(
                         mirror, data={"data": q},
@@ -131,20 +134,22 @@ def _run(q: str, key: dict, what: str) -> list[dict]:
                         timeout=150.0,
                     )
                 except httpx.HTTPError as e:              # a timeout is a refusal too
-                    log.warning("Overpass %s unreachable (%s) — next mirror",
+                    log.warning("Overpass %s unreachable (%s) — trying the next mirror",
                                 httpx.URL(mirror).host, type(e).__name__)
                     last = e
-                    break
+                    continue
                 if r.status_code in RETRY_STATUS:
-                    wait = BACKOFF_BASE_S * (2 ** attempt)
-                    log.warning("Overpass %s %s (attempt %d/%d) — backing off %.0fs",
-                                httpx.URL(mirror).host, r.status_code, attempt + 1,
-                                RETRIES, wait)
+                    log.warning("Overpass %s %s — trying the next mirror",
+                                httpx.URL(mirror).host, r.status_code)
                     last = r
-                    time.sleep(wait)
                     continue
                 r.raise_for_status()
                 return r.json()
+            # Every mirror refused this round. NOW back off, and go round again.
+            wait = BACKOFF_BASE_S * (2 ** attempt)
+            log.warning("every Overpass mirror refused (attempt %d/%d) — backing off %.0fs",
+                        attempt + 1, RETRIES, wait)
+            time.sleep(wait)
         # Every allowlisted mirror refused. Surface it — never a fake 0.
         if hasattr(last, "raise_for_status"):
             last.raise_for_status()

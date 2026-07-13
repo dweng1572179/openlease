@@ -208,3 +208,38 @@ def test_a_tile_scores_identically_to_a_circle(monkeypatch):
             if score.haversine_m(lat, lng, p["lat"], p["lng"]) <= overpass.RADIUS_M]
     assert len(near) == len(circle), "the radius filter kept a POI it should have dropped"
     assert score.walk_score(lat, lng, tile if False else near) == score.walk_score(lat, lng, circle)
+
+
+def test_a_refusal_tries_the_other_mirror_before_it_sleeps(monkeypatch):
+    """Two mirrors are allowlisted so that one can cover for the other. The retry loops used
+    to nest the wrong way round — all four backoffs against the first mirror (8+16+32+64 =
+    two minutes of sleeping) before the second was asked even once. A 406 comes back
+    instantly and means "not now", so asking the other mirror is free and immediate; we
+    sleep only when BOTH have refused."""
+    import httpx as _httpx
+
+    asked, slept = [], []
+
+    class _Resp:
+        status_code = 406
+        def raise_for_status(self): raise AssertionError("should not be reached")
+
+    def fake_post(url, **kw):
+        asked.append(_httpx.URL(url).host)
+        if len(asked) == 2:                       # the SECOND mirror answers
+            class OK:
+                status_code = 200
+                def raise_for_status(self): pass
+                def json(self): return {"elements": [{"id": 1, "lat": 40.0, "lon": -73.0,
+                                                      "tags": {"amenity": "cafe"}}]}
+            return OK()
+        return _Resp()
+
+    monkeypatch.setattr(overpass.httpx, "post", fake_post)
+    monkeypatch.setattr(overpass.time, "sleep", lambda s: slept.append(s))
+    monkeypatch.setattr(overpass, "cached", lambda p, e, k, f, *a, **kw: f())
+
+    got = overpass.pois(40.0, -73.0)
+    assert got, "the second mirror answered and we threw it away"
+    assert len(set(asked)) == 2, f"only ever asked {set(asked)} — the fallback never fired"
+    assert slept == [], "slept before trying the other mirror — that is the bug"

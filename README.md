@@ -83,10 +83,12 @@ constraint (the rent cap), re-runs the query, and says so: a **near-miss banner*
 plainly discloses it relaxed the rent, not a result quietly passed off as a match. You get
 one result card, one pin on the map, and a listing page with a parcel panel (a real,
 request-time lookup — for this particular address it comes back "No parcel matched," which
-is itself an honest answer, not a crash) and a Save button — no key anywhere. (Walk Score
-and Transit Score are computed during enrichment, which runs for crawled and imported
-listings; the raw seed data used in this walkthrough hasn't been through that step, so
-those two rows are simply absent from the demo listing rather than shown as a fake zero.)
+is itself an honest answer, not a crash) and a Save button — no key anywhere.
+
+Run `POST /api/enrich` and that listing also gets **Walk Score 86**, with the per-category
+breakdown that explains it. Until you do, the Walk Score and Transit Score rows are simply
+**absent** — not zero. A zero is a real Walk Score (it means car-dependent), so showing one
+for "not computed yet" would be a lie the UI couldn't distinguish from the truth.
 
 ## Where the listings come from
 
