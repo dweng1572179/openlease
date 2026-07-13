@@ -242,3 +242,17 @@ def test_absurd_numbers_are_rejected_as_parse_artifacts():
             "Suite 4 SF. 99,999,999 SF campus.</p></html>")
     d = extract.from_html_facts(junk, "https://x.test/listings/1", _SRC, "la")
     assert d is None or d.get("size_sf") is None   # 4 SF and 99M SF are both out of bounds
+
+
+def test_the_city_comes_from_the_page_so_the_address_can_be_geocoded():
+    """Broker pages write "540 Rose Avenue Venice, CA 90291" — no comma before the city —
+    so a naive capture runs back through the street name. We already KNOW the street, so
+    subtract its words. This is what turns a bare street name into a geocodable address,
+    and it is what reveals a listing that is not in this market at all: Rexford is a
+    SoCal-wide REIT, and crawled under `la` it hands us buildings in Oxnard and Carlsbad."""
+    assert extract._city_of("540 Rose Avenue Venice, CA 90291", "540 Rose Avenue") == ("Venice", "CA")
+    assert extract._city_of("1442 2nd Street Santa Monica, CA", "1442 2nd Street") == ("Santa Monica", "CA")
+    assert extract._city_of("Del Norte Boulevard Oxnard, CA", "701 Del Norte Boulevard") == ("Oxnard", "CA")
+    # CRE boilerplate sits exactly where a city would
+    assert extract._city_of("540 Rose Avenue NNN Venice, CA", "540 Rose Avenue") == ("Venice", "CA")
+    assert extract._city_of("no city named anywhere", "1 Main St") is None

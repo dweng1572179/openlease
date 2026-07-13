@@ -382,6 +382,9 @@ def _geocode(address: str, metro: str) -> tuple[float, float] | None:
     parcel_la.py / parcel_chicago.py). A failure of ANY kind (no match, the mirror is
     down, a malformed response) returns None — never 0/0 (constraints.md: `None != 0 !=
     "lookup failed"`, and 0,0 is the Gulf of Guinea)."""
+    from .providers import census
+
+    g = None
     try:
         if metro == "nyc":
             from .providers import geosearch
@@ -389,11 +392,26 @@ def _geocode(address: str, metro: str) -> tuple[float, float] | None:
         else:
             prov = registry.parcel_provider(metro)
             g = prov.geocode(address) if prov and hasattr(prov, "geocode") else None
-        return (g["lat"], g["lng"]) if g else None
     except Exception as e:  # noqa: BLE001 — a geocoder outage must not crash the crawl
         log.warning("geocoding failed for %r in %s (%s): %s",
                     address, metro, type(e).__name__, e)
-        return None
+
+    if g:
+        return (g["lat"], g["lng"])
+
+    # The metro's own layer came up empty. Fall back to the US Census geocoder — free,
+    # keyless, national, government-run.
+    #
+    # These per-metro layers are PARCEL CACHES, not geocoders. LA County's resolved 2 of 6
+    # real Los Angeles addresses; it simply does not contain "540 Rose Avenue, Venice". The
+    # crawled LA corpus got 4 map pins out of 74 listings. Census finds all of them.
+    try:
+        c = census.geocode(address)
+        if c:
+            return (c["lat"], c["lng"])
+    except Exception as e:  # noqa: BLE001
+        log.warning("census geocoding failed for %r (%s): %s", address, type(e).__name__, e)
+    return None
 
 
 # The state each metro lives in. Used to reject a national feed's out-of-market listings

@@ -110,3 +110,21 @@ def test_an_ordinal_street_still_matches(isolated_db, monkeypatch):
     monkeypatch.setattr("httpx.get", lambda *a, **kw: _FakeResponse(_ESB_FEATURE))
     got = geosearch.geocode("350 5th Ave, New York, NY")
     assert got and got["matched"] == "350 5 AVENUE, New York, NY, USA"
+
+
+def test_census_rejects_a_wrong_street_too(isolated_db, monkeypatch):
+    """Same standard as every other geocoder here: the street we asked for has to be the
+    street we got back."""
+    from app.providers import census
+    payload = {"result": {"addressMatches": [{
+        "matchedAddress": "205 DAHILL ROAD, BROOKLYN, NY, 11218",
+        "coordinates": {"x": -73.9803, "y": 40.6421}}]}}
+    monkeypatch.setattr("httpx.get", lambda *a, **kw: _FakeResponse(payload))
+    assert census.geocode("205 Hallock Road, Stony Brook, NY") is None
+
+    ok = {"result": {"addressMatches": [{
+        "matchedAddress": "540 ROSE AVE, VENICE, CA, 90291",
+        "coordinates": {"x": -118.4729, "y": 33.9986}}]}}
+    monkeypatch.setattr("httpx.get", lambda *a, **kw: _FakeResponse(ok))
+    got = census.geocode("540 Rose Avenue, Venice, CA")
+    assert got and got["lat"] == 33.9986

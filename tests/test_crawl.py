@@ -803,3 +803,22 @@ def test_a_rung_that_finds_no_size_and_no_ask_has_not_found_a_listing(monkeypatc
     assert d["size_sf"] == 1500                          # ...the page's text gave us these
     assert d["asking_rent"] == 95.0
     assert d["property_type"] == "retail"
+
+
+def test_census_is_the_fallback_when_the_metro_layer_comes_up_empty(monkeypatch, isolated_db):
+    """The per-metro layers are PARCEL CACHES, not geocoders. LA County's resolved 2 of 6
+    real Los Angeles addresses — it simply does not contain "540 Rose Avenue, Venice" — so
+    the crawled LA corpus got 4 map pins out of 74 listings. The US Census geocoder is free,
+    keyless, national and government-run, and it finds all of them."""
+    from app.providers import census
+    monkeypatch.setattr(crawl.registry, "parcel_provider", lambda metro: None)
+    monkeypatch.setattr(census, "geocode",
+                        lambda addr: {"lat": 33.9986, "lng": -118.4729, "matched": addr})
+    assert crawl._geocode("540 Rose Avenue, Venice, CA", "la") == (33.9986, -118.4729)
+
+
+def test_census_still_refuses_to_guess(monkeypatch, isolated_db):
+    from app.providers import census
+    monkeypatch.setattr(crawl.registry, "parcel_provider", lambda metro: None)
+    monkeypatch.setattr(census, "geocode", lambda addr: None)
+    assert crawl._geocode("nowhere at all", "la") is None      # None, never 0/0

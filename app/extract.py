@@ -272,6 +272,42 @@ _RENT_MO = re.compile(r"\$\s?([\d][\d,]{2,})\s*(?:/|\s+per\s+)\s*(?:mo\b|month)"
 _SALE = re.compile(r"\$\s?([\d][\d,]{5,})(?!\s*(?:/|\s+per\s+))", re.I)
 
 # Sanity bounds. A "size" of 3 SF or 40,000,000 SF is a parse artifact, not a listing.
+# "…, Venice, CA 90291" / "…, Oxnard, CA". The city + state, which is what turns a bare
+# street name into a geocodable address — and what reveals a listing that is not in this
+# market at all.
+_STATE_RE = (r"A[LKZR]|C[AOT]|DE|FL|GA|HI|I[ADLN]|K[SY]|LA|M[ADEINOST]|N[CDEHJMVY]"
+             r"|O[HKR]|PA|RI|S[CD]|T[NX]|UT|V[AT]|W[AIVY]|DC")
+_CITY = re.compile(r"([A-Z][A-Za-z.\-]+(?:\s+[A-Z][A-Za-z.\-]+){0,3}),\s*(" + _STATE_RE + r")\b(?!\w)")
+# Words that belong to the STREET, not the city — "540 Rose Avenue Venice, CA" has no comma
+# before the city, so the capture runs back through the street name.
+_STREET_WORDS = {
+    "street", "st", "avenue", "ave", "boulevard", "blvd", "drive", "dr", "road", "rd",
+    "place", "pl", "court", "ct", "lane", "ln", "parkway", "pkwy", "highway", "hwy",
+    "way", "terrace", "circle", "square", "north", "south", "east", "west", "suite", "ste",
+    "floor", "unit",
+    # CRE boilerplate that sits right where a city would ("… Avenue NNN Venice, CA")
+    "nnn", "mg", "fs", "igg", "lease", "sale", "sf", "available", "for", "space",
+}
+
+
+def _city_of(text: str, address: str = "") -> tuple[str, str] | None:
+    """The city and state a page names.
+
+    Pages write "540 Rose Avenue Venice, CA 90291" — no comma before the city — so the
+    capture runs back through the street name. We already KNOW the street (it's `address`),
+    so subtract its words: what's left is the city. "Santa Monica" survives; "Rose" doesn't.
+    """
+    m = _CITY.search(text)
+    if not m:
+        return None
+    known = {w.lower() for w in re.findall(r"[\w.\-]+", address)}
+    words = [w for w in m.group(1).split()
+             if w.lower() not in _STREET_WORDS and w.lower() not in known and not w.isdigit()]
+    if not words:
+        return None
+    return " ".join(words[-2:]) if len(words) > 1 else words[0], m.group(2)
+
+
 _MIN_SF, _MAX_SF = 100, 2_000_000
 _MIN_SF_YR, _MAX_SF_YR = 5.0, 1_000.0        # $/SF/yr
 _MIN_SF_MO, _MAX_SF_MO = 0.5, 90.0           # $/SF/mo (LA/industrial convention)
@@ -318,6 +354,15 @@ def from_html_facts(html: str, url: str, src: dict, metro: str) -> dict | None:
         return None
 
     d: dict = {"address": addr, "broker_firm": src["name"]}
+
+    # The city, if the page names one. This is what makes the address GEOCODABLE — and
+    # what lets us tell that a listing isn't in this market at all. Rexford is a SoCal-wide
+    # REIT: crawled under `la`, it hands us buildings in Oxnard (Ventura County) and
+    # Carlsbad (San Diego County). Their pages say so; a bare street name does not.
+    city = _city_of(txt, addr)
+    if city:
+        d["geo_hint"] = f"{addr}, {city[0]}, {city[1]}"
+        d["geo_state"] = city[1].lower()      # lets _out_of_market reject it before geocoding
 
     sizes = [_num(s) for s in _SIZE.findall(txt)]
     sizes = [s for s in sizes if _MIN_SF <= s <= _MAX_SF]

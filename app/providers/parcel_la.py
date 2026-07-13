@@ -14,6 +14,7 @@ There is also no standalone lot-size attribute — `outFields=*` already returns
 ArcGIS-computed `Shape.STArea()` (the parcel polygon's own area, in the service's native
 square feet), which is the only honest source for `lot_sqft` here."""
 import json
+import re
 
 import httpx
 
@@ -22,6 +23,25 @@ from ..models import Parcel
 
 MAPSERVER = ("https://public.gis.lacounty.gov/public/rest/services/LACounty_Cache/"
              "LACounty_Parcel/MapServer/0/query")
+
+# The Assessor stores addresses ABBREVIATED — "1442 2ND ST SANTA MONICA CA 90401", never
+# "STREET". So `SitusFullAddress LIKE '1442 2ND STREET%'` matches nothing, and it matched
+# nothing for the whole crawled LA corpus: 4 of 74 listings got a pin. Spell it their way.
+_ABBREV = {
+    "STREET": "ST", "AVENUE": "AVE", "BOULEVARD": "BLVD", "DRIVE": "DR", "ROAD": "RD",
+    "PLACE": "PL", "COURT": "CT", "LANE": "LN", "PARKWAY": "PKWY", "HIGHWAY": "HWY",
+    "TERRACE": "TER", "CIRCLE": "CIR", "SQUARE": "SQ", "TRAIL": "TRL", "WAY": "WAY",
+    "NORTH": "N", "SOUTH": "S", "EAST": "E", "WEST": "W",
+}
+
+
+def _situs(address: str) -> str:
+    """The street portion, spelled the way the Assessor spells it."""
+    street = address.split(",")[0].upper()
+    street = re.sub(r"[^\w\s]", " ", street)                  # "1160-1170" -> "1160 1170"
+    return " ".join(_ABBREV.get(w, w) for w in street.split())
+
+
 OWNER_REASON = ("California statute: owner-of-record is not published free through the "
                 "county's open GIS. This is a gap in the public data, not a failed lookup.")
 ZONING_REASON = "LA zoning lives in a separate county layer; not wired in v1."
@@ -48,8 +68,7 @@ def normalize(raw: dict) -> Parcel:
 
 
 def lookup(address: str, lat: float | None = None, lng: float | None = None) -> Parcel | None:
-    where = (f"SitusFullAddress LIKE '{address.split(',')[0].upper()}%'" if not lat
-             else "1=1")
+    where = f"SitusFullAddress LIKE '{_situs(address)}%'" if not lat else "1=1"
     params = {"where": where, "outFields": "*", "returnGeometry": "false",
               "resultRecordCount": 1, "f": "json"}
     if lat and lng:
@@ -93,7 +112,7 @@ def geocode(address: str) -> dict | None:
     2026-07-12 — unlike Miami's point layer), and this server does not support
     `returnCentroid` (verified live: the parameter is silently ignored, no `centroid` key
     comes back), so the centroid is computed here from the first (exterior) ring."""
-    street = address.split(",")[0].upper()
+    street = _situs(address)
 
     def fetch():
         r = httpx.get(MAPSERVER, params={
