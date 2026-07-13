@@ -155,3 +155,29 @@ def test_retries_run_out_and_the_error_surfaces(monkeypatch, isolated_db):
     monkeypatch.setattr("httpx.post", lambda *a, **kw: _FakeResponse({}, 429))
     with pytest.raises(httpx.HTTPStatusError):
         overpass.pois(40.7484, -73.9857)
+
+
+def test_when_one_mirror_has_had_enough_we_try_the_other(monkeypatch, isolated_db):
+    """Two mirrors are allowlisted for exactly this reason, and the retry loop was only ever
+    asking the first. Under a real bulk enrichment overpass-api.de 406s us for the day and
+    kumi.systems 504s the heavy query — the run should exhaust BOTH before it gives up, not
+    one."""
+    monkeypatch.setattr(settings, "overpass_url", "https://overpass-api.de/api/interpreter")
+    monkeypatch.setattr(overpass.time, "sleep", lambda s: None)
+    hosts = []
+    good = {"elements": [{"type": "node", "lat": 40.75, "lon": -73.98,
+                          "tags": {"amenity": "cafe", "name": "Cafe"}}]}
+
+    def _post(url, data=None, headers=None, timeout=None):
+        hosts.append(httpx.URL(url).host)
+        # the primary always refuses; the fallback answers
+        if "overpass-api.de" in url:
+            return _FakeResponse({}, 429)
+        return _FakeResponse(good, 200)
+
+    monkeypatch.setattr("httpx.post", _post)
+    got = overpass.pois(40.7484, -73.9857)
+
+    assert got and got[0]["category"] == "coffee"
+    assert "overpass-api.de" in hosts and "overpass.kumi.systems" in hosts
+    assert hosts[-1] == "overpass.kumi.systems", "the fallback is what finally answered"

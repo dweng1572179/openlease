@@ -84,24 +84,42 @@ def pois(lat: float, lng: float) -> list[dict]:
         # listing away (an ingest that silently drops 75% of its POIs would leave a corpus
         # of plausible-looking, uniformly-low Walk Scores). Accept is explicit: some mirrors
         # 406 a POST that doesn't state what it wants back.
+        #
+        # And when a mirror has had enough of us, try the OTHER one. That is the entire
+        # reason two are allowlisted, and the retry loop was only ever asking the first.
+        # The configured mirror is tried first; the rest of the allowlist is the fallback.
+        host = httpx.URL(settings.overpass_url).host
+        mirrors = [settings.overpass_url] + [
+            f"https://{h}/api/interpreter" for h in ALLOWED_HOSTS if h != host]
         last = None
-        for attempt in range(RETRIES):
-            r = httpx.post(
-                settings.overpass_url, data={"data": q},
-                headers={"User-Agent": settings.crawl_user_agent,
-                         "Accept": "application/json"},
-                timeout=150.0,
-            )
-            if r.status_code in RETRY_STATUS:
-                wait = BACKOFF_BASE_S * (2 ** attempt)
-                log.warning("Overpass %s (attempt %d/%d) — backing off %.0fs",
-                            r.status_code, attempt + 1, RETRIES, wait)
-                last = r
-                time.sleep(wait)
-                continue
-            r.raise_for_status()
-            return r.json()
-        last.raise_for_status()   # out of retries: surface the real error, never a fake 0
+        for mirror in mirrors:
+            for attempt in range(RETRIES):
+                try:
+                    r = httpx.post(
+                        mirror, data={"data": q},
+                        headers={"User-Agent": settings.crawl_user_agent,
+                                 "Accept": "application/json"},
+                        timeout=150.0,
+                    )
+                except httpx.HTTPError as e:              # a timeout is a refusal too
+                    log.warning("Overpass %s unreachable (%s) — next mirror",
+                                httpx.URL(mirror).host, type(e).__name__)
+                    last = e
+                    break
+                if r.status_code in RETRY_STATUS:
+                    wait = BACKOFF_BASE_S * (2 ** attempt)
+                    log.warning("Overpass %s %s (attempt %d/%d) — backing off %.0fs",
+                                httpx.URL(mirror).host, r.status_code, attempt + 1,
+                                RETRIES, wait)
+                    last = r
+                    time.sleep(wait)
+                    continue
+                r.raise_for_status()
+                return r.json()
+        # Every allowlisted mirror refused. Surface it — never a fake 0.
+        if hasattr(last, "raise_for_status"):
+            last.raise_for_status()
+        raise RuntimeError(f"every allowlisted Overpass mirror refused: {last}")
 
     data = cached("overpass", "interpreter", {"lat": round(lat, 5), "lng": round(lng, 5)}, fetch)
     els = data.get("elements", [])
