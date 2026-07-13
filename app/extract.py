@@ -213,8 +213,10 @@ def from_wp_json(item: dict, src: dict, metro: str) -> dict | None:
         "size_sf": num(pick("size", "square_feet", "sf", "total_sf")),
         "divisible_min_sf": num(pick("divisible_min", "min_sf")),
         "divisible_max_sf": num(pick("divisible_max", "max_sf")),
-        "asking_rent": num(pick("asking_rent", "rent", "price_per_sf"), float),
-        "rent_unit": "sf_yr" if pick("asking_rent", "rent", "price_per_sf") else None,
+        # NOT a bare "sf_yr". See _feed_rent: a feed's price field is not self-describing,
+        # and calling a $2.25/SF/mo LA industrial ask "sf_yr" is the 12x error in a costume.
+        **_feed_rent(pick("asking_rent", "rent", "price_per_sf"), metro,
+                     str(pick("property_type", "type") or "").lower()),
         "broker_name": pick("broker", "agent", "contact_name"),
         "broker_phone": pick("phone", "contact_phone"),
         "broker_email": pick("email", "contact_email"),
@@ -282,8 +284,14 @@ def from_jsonld(html: str, url: str, src: dict, metro: str) -> dict | None:
                 "address": f"{street}, {city}" if city else street,
                 "neighborhood": city,
                 "size_sf": int(size.get("value")) if str(size.get("value", "")).isdigit() else None,
-                "asking_rent": float(offer["price"]) if str(offer.get("price", "")).replace(".", "").isdigit() else None,
-                "rent_unit": "sf_yr" if offer.get("price") else None,
+                # A feed's bare "price" is not self-describing: it may be a $/SF/yr, a $/SF/mo
+                # (LA and industrial quote monthly), a total monthly rent, or a SALE price.
+                # Stamping "sf_yr" on it unconditionally is the 12x error in a different
+                # costume. _unit_for is the one place that decides, and it refuses when it
+                # cannot tell — so an out-of-band figure now arrives with NO unit and no rent,
+                # rather than a confident wrong one.
+                **_feed_rent(offer.get("price"), metro,
+                             str(node.get("@type") or "").lower()),
                 "photo_urls_json": json.dumps(
                     [node["image"]] if isinstance(node.get("image"), str) else (node.get("image") or [])
                 ),
@@ -435,8 +443,37 @@ _RENT_DECOY = re.compile(
 _DECOY_WINDOW = 60          # chars of run-up to check for a decoy word
 
 
+_DUAL_MARKETED = re.compile(r"for\s+sale\s+(?:or|&|and|/)\s*(?:for\s+)?lease"
+                            r"|for\s+lease\s+(?:or|&|and|/)\s*(?:for\s+)?sale", re.I)
+
+
+def _feed_rent(price, metro: str = "", ptype: str = "") -> dict:
+    """A feed's bare `price` -> {asking_rent, rent_unit}, or {} if we cannot say what it is.
+
+    Both feed rungs used to stamp `rent_unit = "sf_yr"` on any price the feed happened to
+    carry. But a feed's price field is not self-describing: it may be $/SF/yr, $/SF/mo (LA
+    and industrial quote MONTHLY), a total monthly rent, or a SALE price of $6,500,000. Called
+    "sf_yr" regardless, a $2.25/SF/mo LA industrial ask reads as $2.25/SF/YEAR — the same 12x
+    error, in a different costume, and it reads as a bargain. _unit_for is the single place
+    that decides, and it refuses when it cannot tell; refusing leaves the rent absent, which
+    the UI renders honestly, instead of confidently wrong.
+    """
+    if price is None or not str(price).replace(".", "").replace(",", "").isdigit():
+        return {}
+    val = float(str(price).replace(",", ""))
+    unit = _unit_for(val, "", metro, ptype)     # no period stated: the feed gave us a number
+    return {"asking_rent": val, "rent_unit": unit} if unit else {}
+
+
 def _decoyed(text: str, at: int) -> bool:
-    return bool(_RENT_DECOY.search(text[max(0, at - _DECOY_WINDOW):at]))
+    window = text[max(0, at - _DECOY_WINDOW):at]
+    if _DUAL_MARKETED.search(window):
+        # "For Sale or Lease — $45/SF/yr" is a real ASK on a building offered both ways. The
+        # "for sale" rent-decoy (added to stop a sale PRICE per SF becoming a rent) would
+        # otherwise delete the rent from every dual-marketed listing — trading one silent
+        # error for another. A page that says BOTH is quoting a lease rate.
+        return False
+    return bool(_RENT_DECOY.search(window))
 
 
 # The UNIT is not optional — it is the only thing separating a size from any other number
@@ -448,9 +485,14 @@ _SIZE_LABEL = re.compile(
     r"(?:SF\b|sq\.?\s?ft|square\s+feet)", re.I)
 # ...but the word "size" is not always THIS SPACE's size. "Building Size", "Typical Floor
 # Size" and "Lot Size" all contain it, and all three name something a tenant cannot lease.
+# \b on EVERY alternative. Without word boundaries these matched inside ordinary words —
+# "land" inside HighLAND Avenue, PortLAND, OakLAND, CleveLAND; "lot" inside PiLOT and
+# CharLOTte; "site" inside webSITE — so a listing on any such street silently lost its size
+# whenever the street name fell within the 22-character run-up. A guard that eats good data
+# on a street-name coincidence is worse than the decoy it was defending against.
 _SIZE_DECOY = re.compile(
-    r"building|typical\s+floor|floor\s+plate|floorplate|lot|land|site|total|"
-    r"min(?:imum)?|max(?:imum)?", re.I)
+    r"\b(?:building|typical\s+floor|floor\s+plate|floorplate|lot|land|site|total|"
+    r"min(?:imum)?|max(?:imum)?)\b", re.I)
 _SIZE_DECOY_WINDOW = 22
 
 
@@ -709,7 +751,7 @@ def _unit_for(val: float, period: str, metro: str, ptype: str) -> str | None:
 
     if metro == "la" or ptype in ("industrial", "flex"):
         return "sf_mo"                             # the LA / industrial convention
-    if metro in ("nyc", "mia"):
+    if metro in ("nyc", "mia", "chi"):             # these three quote per YEAR
         return "sf_yr"
     return None                                    # we do not know, so we do not say
 
@@ -782,6 +824,7 @@ def from_html_facts(html: str, url: str, src: dict, metro: str) -> dict | None:
         d["total_building_sf"] = total     # the BUILDING. Never the suite.
 
     rng = _available_range(txt)
+    own = _size_of(txt)          # what the page says about THIS listing, if anything
     divs = _divisions(txt)
     if rng:
         # A multi-tenant building leases a RANGE. The largest contiguous unit is what a
@@ -790,14 +833,26 @@ def from_html_facts(html: str, url: str, src: dict, metro: str) -> dict | None:
         # question a broker asks constantly.
         d["divisible_min_sf"], d["divisible_max_sf"] = rng
         d["size_sf"] = rng[1]
+    elif own:
+        # THE PAGE'S OWN STATED SIZE WINS OVER A DIVISIONS BLOCK, and the order here is the
+        # whole point. A suite page carries a "Suites Available" / "Available Spaces" module
+        # advertising the OTHER suites in its building — which is precisely the hazard
+        # _size_of's docstring says it defends against, and _DIVISIONS_HDR matches that
+        # module's header exactly. Consulting _divisions first meant a page reading
+        # "Suite 401. Size: 3,305 SF ... Suites Available: Suite 900: 12,000 SF, Suite 1100:
+        # 20,600 SF" stored the suite as 20,600 SF — another tenant's space, in this
+        # listing's size field, and repeated back in our_description. This branch was written
+        # to stop exactly that, and its own new feature reintroduced it.
+        #
+        # Costs nothing on the pages _divisions exists for: RIPCO's building pages state no
+        # size of their own (_size_of is None there), so the divisions branch below still
+        # runs for them.
+        d["size_sf"] = own
     elif divs:
-        # Same building, units listed one by one instead of as a range. Same answer.
+        # No size of its own — a building that lists its units one by one. Same answer as a
+        # range: the largest unit is what a tenant with a size in mind is shopping for.
         d["divisible_min_sf"], d["divisible_max_sf"] = divs[0], divs[-1]
         d["size_sf"] = divs[-1]
-    else:
-        size = _size_of(txt)
-        if size:
-            d["size_sf"] = size
 
     # The TYPE has to be read before the rent: LA and industrial quote per MONTH, and an
     # unqualified "$5.75/SF" cannot be resolved without knowing which.

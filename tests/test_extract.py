@@ -662,3 +662,76 @@ def test_a_real_westmac_lease_still_reads():
     """The decoy must not eat the ask on a page that IS a lease."""
     txt = "540 Rose Avenue For Lease - $10.00/SF/Mo. NNN. 2,400 SF available."
     assert extract._rent_of(txt, "la", "retail") == (10.0, "sf_mo")
+
+
+def test_another_suites_size_never_becomes_this_suites_size():
+    """A suite page carries a "Suites Available" module advertising the OTHER suites in its
+    building — precisely the hazard _size_of's docstring defends against, and precisely what
+    _DIVISIONS_HDR matches. Consulting _divisions FIRST meant this page stored 20,600 SF:
+    another tenant's space, in this listing's size field, and repeated back in the
+    description we write. The branch that exists to stop this reintroduced it."""
+    txt = ("90 Broad Street, Suite 401. Size: 3,305 SF. This 3,305 SF office suite is "
+           "available immediately. Suites Available Suite 900: 12,000 SF "
+           "Suite 1100: 20,600 SF")
+    assert extract._size_of(txt) == 3305
+    d = extract.from_html_facts(txt, "https://x.com/listings/90-broad-suite-401", SRC, "nyc")
+    assert d["size_sf"] == 3305, f"stored another suite's size: {d['size_sf']}"
+    assert "3,305 SF" in d["our_description"]
+    assert not d.get("divisible_max_sf"), "the other suites are not this one's divisibility"
+
+
+def test_a_building_with_no_size_of_its_own_still_uses_its_divisions():
+    """...and the fix costs nothing on the pages _divisions exists for: RIPCO's building
+    pages state no size of their own, so the divisions branch still runs for them."""
+    txt = ("1150 NE 125th St. Key Details Available Spaces 4 Total Square Feet ±9,113 SF "
+           "Proposed Divisions Retail A: 1,608 SF Retail B: 2,450 SF Retail C: 2,286 SF "
+           "Retail D: 2,769 SF")
+    assert extract._size_of(txt) is None       # the page states no size of its own
+    d = extract.from_html_facts(txt, "https://www.ripcony.com/property-listings/1150-ne/",
+                                SRC, "mia")
+    assert d["size_sf"] == 2769 and d["divisible_min_sf"] == 1608
+
+
+def test_a_street_name_never_eats_the_size():
+    """_SIZE_DECOY had no word boundaries, so "land" matched inside HighLAND / PortLAND /
+    OakLAND / CleveLAND, "lot" inside PiLOT and CharLOTte, "site" inside webSITE. A listing
+    on any such street silently lost its size whenever the street name fell in the 22-char
+    run-up. A guard that eats good data on a street-name coincidence is worse than the decoy
+    it defends against."""
+    for txt in ["4000 Highland Avenue 2,400 SF 2,400 SF of retail.",
+                "1200 Portland Street 5,000 SF 5,000 SF available.",
+                "77 Charlotte Road 1,800 SF 1,800 SF ground floor."]:
+        assert extract._size_of(txt) is not None, f"a street name ate the size: {txt!r}"
+    # ...and the real decoys still fire
+    assert extract._size_of("Lot Size: 12,000 SF") is None
+    assert extract._size_of("Building Size: 300,000 SF") is None
+
+
+def test_a_dual_marketed_building_keeps_its_lease_rate():
+    """"For Sale or Lease" is a real building offered both ways, and the $/SF is a real ASK.
+    The "for sale" rent-decoy (added to stop a sale PRICE per SF becoming a rent) would
+    otherwise delete the rent from every dual-marketed listing — one silent error traded for
+    another."""
+    assert extract._rent_of("123 Main St For Sale or Lease – $45.00/SF/yr. 5,000 SF",
+                            "nyc", "office") == (45.0, "sf_yr")
+    # ...but a pure sale page still refuses (the price-per-SF is not a rent)
+    assert extract._rent_of("1025 Westwood For Sale – $14,995,000 ($810/SF)",
+                            "la", "office") is None
+
+
+def test_a_feed_price_is_not_assumed_to_be_yearly():
+    """Both feed rungs stamped rent_unit="sf_yr" on whatever price the feed carried. A feed's
+    price is not self-describing: a $2.25/SF/mo LA industrial ask called "sf_yr" is the same
+    12x error in a different costume, and it reads as a bargain."""
+    la = extract.from_wp_json(
+        {"title": {"rendered": "1200 E Slauson Ave"}, "slug": "1200-e-slauson-ave-los-angeles-ca",
+         "link": "https://x.com/p/1200", "acf": {"address": "1200 E Slauson Ave",
+                                                 "property_type": "industrial", "rent": "2.25"}},
+        SRC, "la")
+    assert la["rent_unit"] == "sf_mo", "an LA industrial ask is quoted MONTHLY"
+    # a figure that fits no band at all leaves NO rent rather than a confident wrong one
+    weird = extract.from_wp_json(
+        {"title": {"rendered": "9 Test Ave"}, "slug": "9-test-ave-new-york-ny",
+         "link": "https://x.com/p/9", "acf": {"address": "9 Test Ave", "rent": "6500000"}},
+        SRC, "nyc")
+    assert not weird.get("asking_rent"), "a sale-sized number became an asking rent"
