@@ -508,12 +508,22 @@ _SIZE_LABEL = re.compile(
 # building does not need a label decoy anyway: _size_of already drops it BY VALUE
 # (s != building), which is the guard that actually knows which number the building is.
 _SIZE_DECOY = re.compile(
-    r"\b(?:building|typical\s+floor|floor\s+plate|floorplate|lot|land)\b", re.I)
+    r"\b(?:building|typical\s+floor|floor\s+plate|floorplate|lot|land)\b"
+    r"|\b(?:min|max)(?:imum)?\s+(?:size|sf|sq)", re.I)
 _SIZE_DECOY_WINDOW = 22
 
 
-def _size_decoyed(text: str, at: int) -> bool:
-    return bool(_SIZE_DECOY.search(text[max(0, at - _SIZE_DECOY_WINDOW):at]))
+def _size_decoyed(text: str, at: int, ahead: int = 0) -> bool:
+    """`ahead` extends the window PAST the match start, and the labelled path needs it.
+
+    A _SIZE_LABEL match begins at the word "Size" — so for "Min Size 1,000 SF" the run-up
+    ends at "...Min " with the word "size" cut off on the other side of the boundary, and a
+    decoy that looks for "min size" cannot see it. The raw-figure path starts at the DIGIT
+    and sees the whole phrase, which is why the same dropdown was caught there and waved
+    through here — and the label path is the one that WINS.
+    """
+    return bool(_SIZE_DECOY.search(
+        text[max(0, at - _SIZE_DECOY_WINDOW):at + ahead]))
 
 
 # A square footage inside a sentence about the NEIGHBOURHOOD is not this space. 362 Van Brunt
@@ -588,7 +598,14 @@ _DIVISIONS_WINDOW = 340
 # A building that is itself FOR LEASE is not "the building, never the suite" — it IS the
 # space. "For Lease: 25,000 SF industrial building in Vernon" had its 25,000 SF read as the
 # building and excluded, leaving size_sf empty and the listing invisible to every SF filter.
-_LEASE_CTX = re.compile(r"for\s+lease|available|leasing|space\s+available|for\s+rent", re.I)
+# ONLY phrases that say the BUILDING ITSELF is the offering. "available" is NOT one of them:
+# it is the first word of "Available Spaces", the divisions module's own header — so the
+# header of the module disarmed the guard that protects that module, _building_sf returned
+# None for the page, and the 420,000 SF tower at 90 Broad Street became one of its own units
+# again. `building` is the single value BOTH _size_of and _divisions exclude by; nulling it
+# does not merely decline to call a figure the building, it disables the guard everywhere.
+_LEASE_CTX = re.compile(
+    r"for\s+lease|for\s+rent|entire\s+building|whole\s+building|building\s+for\s+lease", re.I)
 _LEASE_CTX_WINDOW = 40
 
 
@@ -681,7 +698,7 @@ def _size_of(text: str) -> int | None:
     #   2. a size labelled as the BUILDING's, the LOT's, or a TYPICAL FLOOR's is not the
     #      size of the space you can lease. A floorplate is not an availability.
     labelled = [_num(m.group(1)) for m in _SIZE_LABEL.finditer(text)
-                if not _size_decoyed(text, m.start())]
+                if not _size_decoyed(text, m.start(), ahead=8)]
     labelled = [s for s in labelled if _MIN_SF <= s <= _MAX_SF and s != building]
     if labelled:
         v = labelled[0]

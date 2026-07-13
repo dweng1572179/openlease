@@ -812,3 +812,52 @@ def test_describe_says_the_building_size_and_the_divisible_range():
     d = extract.describe({"address": "1150 NE 125th", "size_sf": 2769, "property_type": "retail",
                           "divisible_min_sf": 1608, "divisible_max_sf": 2769})
     assert "divisible 1,608-2,769 SF" in d
+
+
+# --- third audit: the FIXES reintroduced the bugs they replaced -----------------
+#
+# Both of these were live at HEAD after the previous fix batch. The lesson is not that the
+# guards were wrong — it is that a guard which NULLS the value other guards depend on is not a
+# narrowing, it is a disarming.
+
+def test_the_divisions_header_does_not_disarm_the_building_guard():
+    """_LEASE_CTX matched the bare word "available" — the first word of "Available Spaces",
+    which is the DIVISIONS MODULE'S OWN HEADER. So _building_sf skipped the only building
+    match and returned None for the whole page. `building` is the single value BOTH _size_of
+    and _divisions exclude by, so nulling it did not merely decline to call 420,000 the
+    building: it disabled the guard everywhere, and the tower became one of its own units
+    again — a 700 SF storefront filed as a 420,000 SF one, for the second time."""
+    txt = ("90 Broad Street. Available Spaces in this 420,000 SF office tower: "
+           "Space A Ground Floor 700 SF. Space B Ground Floor 650 SF. "
+           "Space C Lower Level 1,200 SF. Asking $45.00/SF.")
+    assert extract._building_sf(txt) == 420000, "the divisions header disarmed the guard"
+    d = extract.from_html_facts(txt, "https://x.com/listings/90-broad-street", SRC, "nyc")
+    assert d["size_sf"] == 1200, f"published a 35-story tower as the suite: {d['size_sf']}"
+    assert d["total_building_sf"] == 420000
+
+
+def test_a_size_filter_dropdown_cannot_outrank_the_suites_own_size():
+    """Dropping "min"/"max" from the decoys reopened the size-filter form. "Min Size 1,000 SF"
+    is BLESSED by _SIZE_LABEL (the word "Size" sits inside it), and a filter's two <select>s
+    share one option list — so the value REPEATS, passes the "a label must repeat" guard, and
+    beats the suite's own thrice-stated size.
+
+    The subtle half: a _SIZE_LABEL match STARTS at the word "Size", so the decoy's backward
+    window ended at "...Min " with "size" cut off on the far side of the boundary. The
+    raw-figure path starts at the DIGIT and saw the whole phrase — which is why the same
+    dropdown was caught there and waved through here, on the path that WINS."""
+    txt = ("500 W 7th Street. Min Size 1,000 SF 2,500 SF 10,000 SF Max Size 1,000 SF "
+           "2,500 SF 10,000 SF. Suite 400 - 3,305 SF of creative office. The 3,305 SF suite "
+           "has views. Divisible: 3,305 SF. Asking $3.25/SF/mo.")
+    d = extract.from_html_facts(txt, "https://x.com/listings/500-w-7th-street", SRC, "la")
+    assert d["size_sf"] == 3305, f"a filter dropdown became the suite's size: {d['size_sf']}"
+
+
+def test_the_narrowed_lease_context_still_frees_a_whole_building_lease():
+    """...and the case _LEASE_CTX exists for still works: a building offered FOR LEASE is the
+    space, not "the building, never the suite"."""
+    d = extract.from_html_facts(
+        "1234 Warehouse Way. For Lease: 25,000 SF industrial building in Vernon. "
+        "Asking Rent: $1.50/SF/Mo.",
+        "https://x.com/listings/1234-warehouse-way", SRC, "la")
+    assert d["size_sf"] == 25000
