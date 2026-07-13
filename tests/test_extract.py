@@ -534,3 +534,49 @@ def test_building_prose_variants_are_all_read_as_the_building():
         ("52,333 RSF Class A property", 52333),
     ]:
         assert extract._building_sf(txt) == want, f"missed the building in: {txt!r}"
+
+
+def test_a_label_can_lie_about_what_it_labels():
+    """Blanca's spec sheet reads "Building Size: 625,800 SF ... Typical Floor Size: 17,881
+    SF" and sends you to a third party for the actual availabilities. EVERY square footage
+    on that page is a building spec. _SIZE_LABEL matches the word "Size" INSIDE "Building
+    Size", so the labelled branch handed back 625,800 — the very number _building_sf had
+    just excluded as the tower. Excluding only the tower then left the FLOORPLATE as the
+    last candidate standing, and a floorplate is not an availability either."""
+    txt = ("1450 Brickell. Year Built: 2010 Building Height: 35 Stories "
+           "Building Size: 625,800 SF Building Class: A Typical Floor Size: 17,881 SF")
+    assert extract._building_sf(txt) == 625800
+    assert extract._size_of(txt) is None, \
+        "a page that states no leasable size must not produce one"
+
+
+def test_lot_size_is_not_leasable_size():
+    assert extract._size_of("Lot Size: 12,000 SF") is None
+    assert extract._size_of("Land Size: 40,000 SF") is None
+    # ...but a real availability still reads
+    assert extract._size_of("Space Available: 2,400 SF. 2,400 SF of retail.") == 2400
+
+
+def test_a_suite_cannot_be_bigger_than_its_building():
+    """1355 Alton came out as a 7,000 SF space inside a 3,500 SF building. When that
+    happens we have mixed up two figures and don't know which — so the inferred one goes
+    and the labelled one stays."""
+    txt = ("1355 Alton Road. Building Size: 3,500 SF. 7,000 SF 7,000 SF of frontage "
+           "across the block.")
+    d = extract.from_html_facts(txt, "https://blancacre.com/properties/1355-alton",
+                                SRC, "mia")
+    assert d, "the listing should survive on its building size"
+    assert d.get("total_building_sf") == 3500
+    assert d.get("size_sf") is None, "kept a suite larger than the building it sits in"
+
+
+def test_a_tower_with_no_stated_availability_is_still_a_listing():
+    """Requiring a SUITE size dropped 1450 Brickell on the floor entirely. It is a real
+    625,800 SF Class A tower in Brickell that a tenant searching "office in Brickell"
+    should see — with a link to the broker for what's actually free inside it."""
+    txt = "1450 Brickell Avenue. Building Size: 625,800 SF Building Class: A"
+    d = extract.from_html_facts(txt, "https://blancacre.com/properties/1450-brickell",
+                                SRC, "mia")
+    assert d and d["total_building_sf"] == 625800
+    assert d.get("size_sf") is None
+    assert d["our_description"]

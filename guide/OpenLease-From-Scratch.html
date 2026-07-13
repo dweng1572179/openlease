@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>OpenLease — Build It From Scratch</title>
+<link rel="stylesheet" href="assets/guide.css">
+<style>
+/* This guide says more per page than the setup guide, so it runs a touch tighter. */
+body{ font-size:11pt; }
+.step{ padding-bottom:5px; }
+.step p{ font-size:10.6pt; line-height:1.42; }
+.step h3{ font-size:13pt; }
+.see,.warn{ font-size:10pt; padding:6px 12px; }
+.milestone{ padding:10px 20px; }
+.fixrow{ padding:8px 18px; }
+.fixrow .f{ font-size:10pt; line-height:1.34; }
+.keyintro{ padding:11px 18px; margin-bottom:10px; }
+.keyintro li{ font-size:10.4pt; }
+.note{ padding:11px 16px; font-size:10.4pt; }
+</style>
+</head>
+<body>
+
+<!-- ============ COVER ============ -->
+<section class="full cover">
+  <div class="top">
+    <div class="logo"><img src="assets/fintok-logo.jpeg" alt="Fintok"><span class="wm">Fintok.news</span></div>
+    <div class="kicker">From Scratch</div>
+  </div>
+  <h1>Build It<br><span class="b">From Scratch.</span></h1>
+  <p class="sub">You have a computer. That's it. By the end of this you'll have your own commercial‑leasing search running on it — built by you, owned by you, describing what it finds in plain English instead of a spreadsheet of filters.</p>
+  <p class="sub" style="font-size:12.5pt;margin-top:10px">There is <strong>almost no coding</strong> in here — one line, pasted once, to give it something to search. Every other step tells you exactly what to click and exactly what you should see afterwards. If a step doesn't look right, the last page tells you how to fix it.</p>
+  <div class="reassure">
+    <div><div class="k">5 parts</div><div class="v">about 20 minutes</div></div>
+    <div><div class="k">Free</div><div class="v">nothing to buy today</div></div>
+    <div><div class="k">No experience</div><div class="v">none. zero. really.</div></div>
+  </div>
+  <div class="foot">If you can download a file, click a button, and paste one line once, you can finish this. Take one step at a time and don't skip ahead — each step sets up the next one.</div>
+</section>
+
+<!-- ============ WHAT IS THIS ============ -->
+<section class="full page">
+  <div class="eyebrow">Before we start</div>
+  <h2 class="sec">What you're actually building.</h2>
+  <p class="lead">Read this page once. It's the only page with no clicking in it, and it makes everything else make sense.</p>
+
+  <div class="note calm" style="margin-top:0">
+    <p style="margin:0"><b style="color:var(--navy)">Imagine a broker's assistant who never sleeps.</b> You tell them, in a sentence, what you're after — <em>"retail in Wynwood, about 1,500 square feet, under $8,000 a month."</em> They go check every listing they're honestly allowed to read, plot the matches on a map, layer in free public data most tools charge for, and — if nothing quite fits — say exactly what they had to loosen to show you anything at all, instead of either an empty page or a quiet, dishonest match.</p>
+    <p style="margin:8px 0 0">That assistant is what you're building. It's called <strong>OpenLease</strong>, and it will live on your computer and answer to nobody else.</p>
+  </div>
+
+  <div class="phases" style="margin-top:16px">
+    <div class="phasecard"><div class="num">1</div><div><h3>The engine</h3><p>A free thing called <strong>Python</strong>. It's the motor. <strong>Mac owners already have it</strong> and can skip this part entirely.</p></div><div class="tag opt">Windows</div></div>
+    <div class="phasecard"><div class="num">2</div><div><h3>The tool itself</h3><p>OpenLease is a folder of files. You download it, unzip it, and put it on your Desktop. That's the whole "build."</p></div><div class="tag free">Free</div></div>
+    <div class="phasecard"><div class="num">3</div><div><h3>Switch it on, try it</h3><p>Double‑click one file, paste one line once to load a few sample listings, then run the exact search this guide is written around.</p></div><div class="tag free">Free</div></div>
+    <div class="phasecard"><div class="num">4</div><div><h3>How it actually works</h3><p>Worth ten minutes before you add anything: how it reads a broker's page without an account, and why it says "no parcel matched" instead of guessing.</p></div><div class="tag free">Free</div></div>
+    <div class="phasecard"><div class="num">5</div><div><h3>Give it eyes — the keys</h3><p>OpenLease already searches, maps and scores for free. A "key" lets it read your sentence instead of you picking filters. Optional, and last.</p></div><div class="tag opt">Optional</div></div>
+  </div>
+
+  <div class="note" style="margin-top:14px"><b>Two words you'll see, explained once.</b> A <strong>folder</strong> is just a folder, like any other on your computer. A <strong>key</strong> is a long password you copy from a company's website and paste into OpenLease — it's how that company knows it's you asking, and you pay them directly if you choose to use it. That's the entire vocabulary.</div>
+</section>
+
+<!-- ============ PART 1 ============ -->
+<section class="page break">
+  <div class="band"><span class="pill">Part 1</span><div class="bt"><h2>The engine</h2><p>Windows only — Macs already have it. ~3 minutes.</p></div><span class="wmmini">Fintok · OpenLease</span></div>
+
+  <div class="note calm" style="margin:0 0 16px"><b style="color:var(--navy)">Do you have a Mac? Then Part 1 is already done.</b> Every Mac comes with the engine built in. Don't download anything. Turn the page and start at Part 2.</div>
+
+  <div class="steps">
+    <div class="step"><div class="dot">1</div><h3>Go and get Python</h3><p>Open your web browser, click the address bar, and type this in:</p>
+      <div class="cmd"><span class="c">↗</span> python.org/downloads</div>
+      <p>Click the <strong>big yellow Download Python button</strong> near the top. Ignore the version number — whichever one it offers is fine.</p>
+      <div class="see"><b>What you'll see:</b> a file arriving in your <strong>Downloads</strong> folder, named something like <span class="file">python‑3.13.exe</span>.</div></div>
+
+    <div class="step"><div class="dot">2</div><h3>Open it — and tick the box</h3><p>Double‑click that downloaded file. A grey installer window opens.</p>
+      <div class="warn"><b>STOP. Do this before you click anything else.</b> At the <strong>bottom</strong> of that window, tick <strong>"Add python.exe to PATH."</strong> It's tiny, easy to miss, and the single most common thing people get wrong — without it, OpenLease can't find the engine later.</div>
+      <p>Click <strong>Install Now</strong>. If Windows asks to allow changes, click <strong>Yes</strong>, then wait about a minute.</p></div>
+
+    <div class="step"><div class="dot">3</div><h3>Close it and forget it</h3><p>When it says <strong>Setup was successful</strong>, click <strong>Close</strong>.</p>
+      <div class="see"><b>You're done when:</b> the installer closes. You will never open Python again — it just sits there being an engine.</div></div>
+  </div>
+
+  <div class="milestone"><h3><span class="big">Engine in. That was the hardest part.</span></h3><p>Everything from here is downloading a folder and double‑clicking it.</p></div>
+</section>
+
+<!-- ============ PART 2 ============ -->
+<section class="page break">
+  <div class="band"><span class="pill">Part 2</span><div class="bt"><h2>Get the tool</h2><p>Download the folder, unzip it, put it on your Desktop. ~3 minutes.</p></div><span class="wmmini">Fintok · OpenLease</span></div>
+  <div class="steps">
+    <div class="step"><div class="dot">1</div><h3>Download it</h3><p>OpenLease lives on GitHub — a public shelf where code sits. Type this into your address bar, exactly as written:</p>
+      <div class="cmd"><span class="c">↗</span> github.com/dweng1572179/openlease</div>
+      <p>Find the <strong>green "Code" button</strong> above the file list, click it, and click <strong>Download ZIP</strong> at the bottom of the menu.</p>
+      <div class="see"><b>What you'll see:</b> a file called <span class="file">openlease‑main.zip</span> in your <strong>Downloads</strong> folder. A "ZIP" is just a folder squashed small so it travels faster.</div></div>
+
+    <div class="step"><div class="dot">2</div><h3>Unsquash it</h3><p>Open <strong>Downloads</strong> and double‑click the ZIP.</p>
+      <div class="plat">On a Mac</div><p>Double‑click and you're done — the folder appears next to the ZIP.</p>
+      <div class="plat">On Windows</div><p>Double‑click it, then click <strong>Extract all</strong> at the top, then <strong>Extract</strong>. Windows will happily let you <em>look inside</em> a ZIP without unsquashing it, and OpenLease cannot run from in there.</p>
+      <div class="see"><b>What you'll see:</b> a folder named <span class="file">openlease‑main</span>. Everything in it is OpenLease.</div></div>
+
+    <div class="step"><div class="dot">3</div><h3>Put it on your Desktop, and drop the "‑main"</h3><p>Drag the <span class="file">openlease‑main</span> folder onto your <strong>Desktop</strong>. Rename it to just <span class="file">openlease</span> — click once, hit <strong>Enter</strong> (Mac) or <strong>F2</strong> (Windows), type <span class="file">openlease</span>, press Enter again.</p>
+      <div class="warn"><b>The "‑main" is GitHub's, not yours.</b> Renaming isn't required — the tool runs either way — but this guide says <span class="file">openlease</span> throughout, and matching it means you never have to translate.</div>
+      <div class="see"><b>You're done when:</b> a folder called <span class="file">openlease</span> is on your Desktop, and opening it shows a pile of files — one called <strong>Start OpenLease</strong>. You can bin the ZIP now.</div></div>
+  </div>
+
+  <div class="milestone"><h3><span class="big">You have the tool.</span></h3><p>A folder called <span class="file">openlease</span> is sitting on your Desktop. Next page: switch it on.</p></div>
+</section>
+
+<!-- ============ PART 3 ============ -->
+<section class="page break">
+  <div class="band"><span class="pill">Part 3</span><div class="bt"><h2>Switch it on, and try it</h2><p>Double‑click, wait, log in, paste one line, search. ~8 minutes.</p></div><span class="wmmini">Fintok · OpenLease</span></div>
+  <div class="steps">
+    <div class="step"><div class="dot">1</div><h3>Find the start file</h3><p>Open the <strong>openlease</strong> folder. There's a file called <strong>Start OpenLease</strong> — two versions, use the one for your computer:</p>
+      <div class="pastebox"><span class="lbl">Mac</span> <span class="file">Start OpenLease.command</span> &nbsp;·&nbsp; <span class="lbl">Windows</span> <span class="file">Start OpenLease.bat</span></div>
+      <p><strong>Double‑click it.</strong></p></div>
+
+    <div class="step"><div class="dot">2</div><h3>If your Mac blocks it, let it through</h3><p>If it says <em>"cannot be opened because it is from an unidentified developer,"</em> nothing is wrong. <strong>Right‑click</strong> the file → <strong>Open</strong> → <strong>Open</strong> again in the box that appears.</p>
+      <div class="see"><b>Good news:</b> once, for this one file, forever.</div></div>
+
+    <div class="step"><div class="dot">3</div><h3>Wait for it to build itself, then log in</h3><p>A black window opens with text scrolling — normal, and you don't need to read it. The first run takes <strong>a couple of minutes</strong> while it quietly assembles itself; every time after, it's seconds. <strong>Leave that window open</strong> — closing it turns OpenLease off.</p>
+      <p>Your browser opens on its own. If not, type this into the address bar:</p>
+      <div class="cmd"><span class="c">↗</span> localhost:8788</div>
+      <p>Type the starting password and click <strong>Sign in</strong>:</p>
+      <div class="pastebox"><span class="lbl">Password</span> <span class="file">changeme</span></div></div>
+
+    <div class="step"><div class="dot">4</div><h3>Load a few listings</h3><p>OpenLease starts <strong>empty</strong> — on purpose. Real inventory comes later, from a CSV you import, the crawler, or (in New York) the city's own vacancy feed, and those are commands for someone comfortable with a terminal. To have something to search <em>right now</em>, open <strong>Terminal</strong> (Mac: Applications → Utilities) or <strong>Command Prompt</strong> (Windows: type <span class="file">cmd</span> into the Start menu). Type <span class="mono">cd </span> with a trailing space, <strong>drag the openlease folder</strong> from your Desktop into that window so the path fills itself in, press Enter, then paste this and press Enter again:</p>
+      <div class="cmd"><span class="c">$</span> .venv/bin/python -m app.seed</div>
+      <div class="pastebox"><span class="lbl">Windows</span> <span class="file">.venv\Scripts\python.exe -m app.seed</span></div>
+      <div class="see"><b>What you'll see:</b> <span class="file">seeded — 12 listings</span> — three sample listings in each of New York, Miami and Los Angeles, all clearly labeled "Demo Realty." This is the one line of "code" in this entire guide.</div></div>
+
+    <div class="step"><div class="dot">5</div><h3>Run the search this guide is written around</h3><p>Back in the browser: set the metro to <strong>Miami</strong>, and type exactly this into the search box:</p>
+      <div class="pastebox"><span class="lbl">Search</span> <span class="file">retail in Wynwood ~1,500 SF under $8k/mo</span></div>
+      <p>$8,000/mo works out to a rent cap of about <strong>$64/SF/yr</strong> for 1,500 SF (<span class="mono">8000 × 12 ÷ 1500</span>). The one listing that otherwise fits — 2618 NW 2nd Ave, Wynwood — actually asks <strong>$95/SF/yr</strong>. A strict filter would show you nothing.</p>
+      <div class="see"><b>What you'll see instead:</b> one result, one pin on the map, and a banner saying plainly that the rent cap was relaxed to surface it. Click the card — the listing page shows a parcel panel that honestly reads <span class="file">No parcel matched</span> for this address, and no Walk/Transit Score, because this sample skipped the separate scoring pass real listings go through. Gaps, not guesses.</div></div>
+  </div>
+  <div class="milestone"><h3>🎉 <span class="big">It's alive — and it just told you the truth.</span></h3><p>A real near‑match, honestly disclosed, on your own computer, with no API key anywhere. Turn the page to see why it behaves this way.</p></div>
+</section>
+
+<!-- ============ PART 4 ============ -->
+<section class="page break">
+  <div class="band"><span class="pill">Part 4</span><div class="bt"><h2>How it actually works</h2><p>What happens when you search, and why it says "no" so often.</p></div><span class="wmmini">Fintok · OpenLease</span></div>
+
+  <div class="note calm" style="margin:0 0 12px"><b style="color:var(--navy)">The one idea behind everything below.</b> A tool that guesses is worse than a tool that admits it doesn't know. Every rule on this page exists to keep OpenLease from quietly showing you something wrong.</div>
+
+  <div class="fixtable">
+    <div class="fixrow"><div class="p">1. robots.txt &amp; sitemap</div><div class="f">Before touching a broker's site, OpenLease reads its <span class="mono" style="background:var(--ink);color:#cdd9f5;padding:1px 6px;border-radius:5px">robots.txt</span> (including <span class="mono" style="background:var(--ink);color:#cdd9f5;padding:1px 6px;border-radius:5px">Crawl‑delay</span>) and asks under its own honest identity, the whole way through.</div></div>
+    <div class="fixrow"><div class="p">2. A structured feed</div><div class="f">Some sites publish their own WordPress REST API or a JSON‑LD block on the listing page — address, broker, a link back. No scraping needed at all.</div></div>
+    <div class="fixrow"><div class="p">3. The page's own text</div><div class="f">Most broker sites are only this: "1,500 SF," "$95/SF/yr," sitting in ordinary sentences. Reading that off the page is not a per‑site scraper — <strong>there is no CSS selector anywhere in this codebase</strong> — so it works on any site and a redesign costs nothing.</div></div>
+    <div class="fixrow"><div class="p">4. An LLM (only with a key)</div><div class="f">For the rare page too unstructured for the first three rungs. An improvement, never a requirement — keyless, the first three rungs already carry size and rent, which is what a search like "under $8k/mo" needs to filter on at all.</div></div>
+  </div>
+
+  <div class="note" style="margin-top:14px"><b>What it will never do, no matter what.</b> It never logs in — no account, no cookie, no registration‑ or NDA‑gated page, and there's no setting to turn that on. It stores <strong>facts, not expression</strong>: address, size, ask, broker contact, a link back — never the broker's marketing paragraph (OpenLease writes its own from the facts) and never a re‑hosted photo (hot‑linked from the broker's own server). This is the same fact‑vs‑expression line CoStar successfully argued against CREXi in court, and OpenLease stays well inside it on purpose.</div>
+</section>
+
+<!-- ============ PART 4b ============ -->
+<section class="page break">
+  <div class="band"><span class="pill">Part 4, cont.</span><div class="bt"><h2>Fetching is slow on purpose</h2><p>Why "get the listings" and "score them" are two separate steps.</p></div><span class="wmmini">Fintok · OpenLease</span></div>
+
+  <div class="fixtable">
+    <div class="fixrow"><div class="p">Crawl, then enrich</div><div class="f">Fetching supply (<span class="mono" style="background:var(--ink);color:#cdd9f5;padding:1px 6px;border-radius:5px">POST /api/crawl</span>) and scoring it for walkability (<span class="mono" style="background:var(--ink);color:#cdd9f5;padding:1px 6px;border-radius:5px">POST /api/enrich</span>) used to run together. OpenStreetMap's free Overpass service rate‑limits hard, so a combined run spent 30 minutes backing off and never got past New York. Split apart, the same crawl finishes in nine minutes — Overpass is never touched while you're actually searching.</div></div>
+    <div class="fixrow"><div class="p">One request per neighborhood, not per listing</div><div class="f">A 1.5‑mile circle of nearby amenities around each listing overlaps its neighbors' almost entirely once listings cluster. Asking once per listing made 345 requests for about 40 requests' worth of distinct data, and the free mirror started refusing them. OpenLease now asks once per ~3km tile and filters each listing back to its own radius — the scores come out identical, and a test asserts exactly that.</div></div>
+    <div class="fixrow"><div class="p">A geocoder is told the state, not just the address</div><div class="f">A broker's feed is often national — one brokerage's listings span Texas, Florida and Manhattan. A geocoder scoped to New York <em>does not decline</em> a Florida street; it confidently returns a Brooklyn address with the same fake confidence as a correct hit. OpenLease reads the state off the listing's own URL before geocoding, so a state it doesn't cover is dropped — not silently mis‑pinned to the wrong city.</div></div>
+  </div>
+
+  <div class="note calm" style="margin-top:14px"><b style="color:var(--navy)">The scores, honestly labeled.</b> Walk Score is <strong>Walk Score's own published 2011 methodology</strong>, computed here from OpenStreetMap and checked against their own published anchors: the Empire State Building scores <strong>100</strong> (they publish 100), Bay Ridge, Brooklyn scores <strong>99</strong> (they publish 98), and an industrial block in Vernon, LA scores <strong>33</strong> — proof the score actually discriminates rather than flattering every address. <strong>Transit Score is not calibrated</strong> — its normalization constant is an estimate, not fit against any published methodology — so treat it as a ranking, never a rating. The app says so on every listing page, not just here.</div>
+  <div class="note" style="margin-top:10px"><b>And where a metro simply doesn't publish something</b> — LA won't give up an owner's name for free (state statute), Chicago's zoning layer is blank outside city limits, Miami's county zoning layer is blank inside Wynwood and Brickell — the field reads <span class="file">not published here</span>, with the reason on hover. Never a blank pretending to be a zero.</div>
+</section>
+
+<!-- ============ PART 5 ============ -->
+<section class="page break">
+  <div class="band"><span class="pill">Part 5</span><div class="bt"><h2>Give it eyes — the keys</h2><p><strong style="color:#fff">Start with none of them.</strong> Everything in Parts 1–4 already works without one.</p></div><span class="wmmini">Fintok · OpenLease</span></div>
+
+  <div class="keyintro">
+    <h3>🔑 What a "key" is, and how you add one</h3>
+    <p style="font-size:10.5pt;margin:0 0 6px">A <strong>key</strong> is a long password you copy from a provider's website and paste into OpenLease — it's how they know it's you asking. You pay them directly, at their price. OpenLease takes no cut.</p>
+    <ol>
+      <li>In OpenLease, click <strong>settings</strong> — small link, top‑right corner.</li>
+      <li><strong>Paste</strong> the key into the box with the matching name, then click <strong>Save</strong>. It applies immediately — no restart.</li>
+    </ol>
+    <div class="warn" style="margin-top:8px"><b>The one thing worth setting before you add a key: the spend cap.</b> Same Settings page, <span class="file">Monthly paid‑spend cap</span>. OpenLease checks every paid call against it and refuses to go over — set it to whatever you're comfortable never exceeding, before you paste anything.</div>
+  </div>
+
+  <div class="fixtable">
+    <div class="fixrow"><div class="p">Anthropic (Claude)<br><span style="font-weight:400;color:var(--slate);font-size:9.6pt">pay‑as‑you‑go, capped</span></div><div class="f"><b>Start here, if you add one at all.</b> Type a sentence instead of picking filters, get a written reply and per‑listing chat, and let the crawler read size/rent off pages that don't publish them structurally. Sign up at <strong>console.anthropic.com</strong>, add billing <em>before</em> creating a key (a key with no credit behind it does nothing), then API Keys → Create Key → paste into <b>Anthropic API key</b> → Save.</div></div>
+    <div class="fixrow"><div class="p">Voyage AI<br><span style="font-weight:400;color:var(--slate);font-size:9.6pt">free tier is enough</span></div><div class="f">Sharper ranking — matches "creative loft office" to a listing that never uses those words. Its free tier alone covers a corpus this size roughly 400× over. Sign up at <strong>dash.voyageai.com</strong>, no card needed, API Keys → Create → paste into <b>Voyage API key</b> → Save. Only ever changes ranking, never a hard filter.</div></div>
+    <div class="fixrow"><div class="p">Google Maps<br><span style="font-weight:400;color:var(--slate);font-size:9.6pt">one feature only</span></div><div class="f">A Street View photo on the listing page — nothing else in OpenLease touches this key. Needs a billing‑enabled project at <strong>console.cloud.google.com</strong> with the Street View Static API turned on, then a restricted API key pasted into <b>Google Maps key</b> → Save.</div></div>
+  </div>
+
+  <div class="see" style="margin-top:12px"><b>Don't buy what you haven't already missed.</b> Run the free version for a week — three metros, sample or imported listings, full parcel and Walk/Transit data — and add Anthropic the moment you catch yourself wishing you could just type a sentence.</div>
+</section>
+
+<!-- ============ TROUBLESHOOTING ============ -->
+<section class="page break">
+  <div class="eyebrow">When it goes wrong</div>
+  <h2 class="sec">Nothing here is broken.</h2>
+  <p class="lead">Everything on this page has happened to somebody. Find your problem on the left, do the thing on the right. Nothing here can damage your computer or lose your work beyond what's noted.</p>
+
+  <div class="fixtable">
+    <div class="fixrow"><div class="p">The black window flashed up and vanished</div><div class="f">Windows: <b>Python isn't installed, or you missed the PATH checkbox.</b> Reinstall from <b>python.org/downloads</b> and tick <b>"Add python.exe to PATH"</b> before clicking Install. Then double‑click Start OpenLease again.</div></div>
+    <div class="fixrow"><div class="p">Mac says "unidentified developer"</div><div class="f">Expected. <b>Right‑click</b> the Start OpenLease file → <b>Open</b> → <b>Open</b> again. Once only, then never again.</div></div>
+    <div class="fixrow"><div class="p">The browser says "can't reach this page"</div><div class="f">You got there before it did. <b>Wait 30 seconds and refresh.</b> Check the black window is still open — if you closed it, OpenLease turned off; double‑click Start OpenLease again.</div></div>
+    <div class="fixrow"><div class="p">The seed line says "command not found" or similar</div><div class="f">Start OpenLease hasn't finished its first run yet — that's what creates the <span class="mono" style="background:var(--ink);color:#cdd9f5;padding:1px 6px;border-radius:5px">.venv</span> folder the seed command lives in. Let the black window finish (watch for the "Starting OpenLease at..." line) before you open Terminal.</div></div>
+    <div class="fixrow"><div class="p">Search comes back with nothing, ever</div><div class="f">No listings are loaded yet. Run the one‑line seed command from Part 3, step 4 — or, once you're past the demo, bring real supply in with a CSV import or the crawler (see the project's README for those commands).</div></div>
+    <div class="fixrow"><div class="p">My Anthropic key doesn't do anything</div><div class="f">You almost certainly <b>haven't bought credit yet</b>. console.anthropic.com → <b>Billing</b> → add a card → buy credit. A key with no credit behind it does nothing.</div></div>
+    <div class="fixrow"><div class="p">I already run OpenProp on this computer</div><div class="f">No conflict. OpenLease listens on <b>8788</b>, OpenProp holds <b>8787</b> — both run at the same time, each in its own black window.</div></div>
+    <div class="fixrow"><div class="p">I want to turn it off</div><div class="f"><b>Close the black window</b> — that's it. Or double‑click <b>Stop OpenLease</b>. Your listings, saves and portfolios are all in a local database file and will be there next time.</div></div>
+    <div class="fixrow"><div class="p">I think I've broken it beyond repair</div><div class="f"><b>Delete the openlease folder and start Part 2 again.</b> You'd lose whatever listings, saves and portfolios were in that copy's database — nothing else on your computer is touched.</div></div>
+  </div>
+</section>
+
+<!-- ============ CLOSING ============ -->
+<section class="close-sheet close">
+  <div class="inner">
+    <div class="logo on-dark"><img src="assets/fintok-logo.jpeg" alt="Fintok"><span class="wm">Fintok.news</span></div>
+    <h2>You built that.</h2>
+    <p class="sub">A little while ago that sentence would have sounded ridiculous. There is now a piece of real software running on your computer, that you set up yourself, that searches only what you point it at, and tells you the truth when it can't find a clean match.</p>
+    <div class="cards">
+      <div class="c"><h4>It's private</h4><p>It runs on your machine. Your searches, saves and portfolios never leave it — there's no company on the other end.</p></div>
+      <div class="c"><h4>It's yours</h4><p>No subscription, no seat fee, no expiring credits. You pay an AI provider directly, only for what you use, only if you choose to.</p></div>
+      <div class="c"><h4>It's honest</h4><p>A near‑miss says what it relaxed. A missing field says why. An uncalibrated score says so. Nothing here quietly guesses.</p></div>
+    </div>
+    <p class="sub" style="font-size:11.5pt">Start it any time by double‑clicking <span class="file" style="background:rgba(255,255,255,.14)">Start OpenLease</span> in the openlease folder on your Desktop. Stop it by closing the black window. That's the whole manual.</p>
+    <div class="foot">
+      <div class="logo on-dark sm"><img src="assets/fintok-logo.jpeg" alt=""><span class="wm">Fintok.news</span></div>
+      <div class="tag">OpenLease — made to be owned, not rented.<br>Licensed PolyForm Noncommercial 1.0.0 — free for anything except selling it.</div>
+    </div>
+  </div>
+</section>
+
+</body>
+</html>

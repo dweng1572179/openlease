@@ -14,28 +14,28 @@
     <div class="kicker">Setup Guide</div>
   </div>
   <h1>Set Up Your Own<br><span class="b">Leasing Search.</span></h1>
-  <p class="sub">A plain‑English guide — no coding, and you never open or edit a single file. If you can install an app and copy‑and‑paste into a website, you can do this. We go one small step at a time and tell you exactly what you'll see after each one.</p>
+  <p class="sub">A plain‑English guide — no coding, and only one line to paste into a black window, once. If you can install an app and copy‑and‑paste into a website, you can do this. We go one small step at a time and tell you exactly what you'll see after each one.</p>
   <div class="reassure">
     <div><div class="k">~15 min</div><div class="v">start to finish</div></div>
-    <div><div class="k">Double‑click</div><div class="v">no terminal, no code</div></div>
+    <div><div class="k">Double‑click</div><div class="v">one paste, no code</div></div>
     <div><div class="k">Your PC</div><div class="v">your searches stay home</div></div>
   </div>
-  <div class="foot">Your own commercial‑leasing search over four metros — New York, Miami, Los Angeles, Chicago — running on your computer, at no cost beyond the API keys you choose to bring.</div>
+  <div class="foot">Your own commercial‑leasing search over three metros — New York, Miami, Los Angeles — running on your computer. It needs no API keys at all; add one later only for the extras.</div>
 </section>
 
 <!-- ============ OVERVIEW ============ -->
 <section class="full page">
   <div class="eyebrow">The whole thing, in one look</div>
   <h2 class="sec">Three phases. You can stop after two.</h2>
-  <p class="lead">Here's the entire journey before we start, so nothing is a surprise. You'll only ever <strong>double‑click</strong> and <strong>use your web browser</strong> — never a command, never a file.</p>
+  <p class="lead">Here's the entire journey before we start, so nothing is a surprise. It's almost entirely <strong>double‑click</strong> and <strong>your web browser</strong> — the one exception is a single line you paste into a black window in Phase 2, to load a few listings to search.</p>
 
   <div class="phases">
     <div class="phasecard"><div class="num">1</div><div><h3>Install the engine <span style="font-size:10pt;color:var(--slate);font-weight:400">— Windows only</span></h3><p>On <strong>Windows</strong>, install one free thing: <strong>Python</strong> — the "motor" OpenLease runs on. Two clicks and one checkbox. On a <strong>Mac</strong>, skip this entirely — the motor is already built in.</p></div><div class="tag opt">Windows</div></div>
-    <div class="phasecard"><div class="num">2</div><div><h3>Turn OpenLease on</h3><p>Double‑click one file. OpenLease opens in your web browser with four metros and a small demo of listings already loaded, so there's something to search immediately.</p></div><div class="tag free">Free</div></div>
+    <div class="phasecard"><div class="num">2</div><div><h3>Turn OpenLease on</h3><p>Double‑click one file. OpenLease opens in your web browser, set to New York, Miami and Los Angeles. One more copy‑paste line loads 12 sample listings, so there's something to search immediately.</p></div><div class="tag free">Free</div></div>
     <div class="phasecard"><div class="num">3</div><div><h3>Add your keys (the AI)</h3><p>Plain‑English search, the conversational reply, semantic ranking, a Street View thumbnail — each is a "key" you paste into the app's Settings page. Add what you need.</p></div><div class="tag opt">Optional</div></div>
   </div>
 
-  <div class="note calm"><b style="color:var(--navy)">You never touch code or files.</b> After Phase 2, OpenLease already searches its demo listings across all four metros — for free, no key. Phase 3 is a menu you turn on inside the app, by pasting keys. There's no wrong order and nothing to break.</div>
+  <div class="note calm"><b style="color:var(--navy)">You never edit a file.</b> After Phase 2, OpenLease already searches its sample listings across all three metros — for free, no key. Phase 3 is a menu you turn on inside the app, by pasting keys. There's no wrong order and nothing to break.</div>
   <div class="note" style="margin-top:12px"><b>On a Mac? Start at Phase 2.</b> Macs already have the engine built in, so Phase 1 is for Windows only — skip it. That makes the whole thing about <strong>10 minutes</strong> for you.</div>
 </section>
 
@@ -78,8 +78,12 @@
       <p>In the <strong>Password</strong> box type the starting password, then click the blue <strong>Sign in</strong> button:</p>
       <div class="pastebox"><span class="lbl">Password</span> <span class="file">changeme</span></div>
       <div class="see"><b>Change it later:</b> the password lives in a file called <span class="file">.env</span> next to <span class="file">Start OpenLease</span>, as <span class="file">OPENLEASE_PASSWORD</span> — worth changing if this machine is reachable by anyone but you.</div></div>
+    <div class="step"><div class="dot">5</div><h3>Load a few listings to try it on</h3><p>OpenLease starts empty — real inventory comes in later, from a CSV you import, the crawler, or (in New York) the city's own vacancy feed. To have something to search <em>right now</em>, load 12 sample listings with one line. Open <strong>Terminal</strong> (Mac: Applications → Utilities) or <strong>Command Prompt</strong> (Windows: type <span class="file">cmd</span> into the Start menu). Type <span class="mono">cd </span> with a trailing space, then <strong>drag your openlease folder</strong> from the Desktop into that window — the path fills itself in. Press Enter, then paste this and press Enter again:</p>
+      <div class="cmd"><span class="c">$</span> .venv/bin/python -m app.seed</div>
+      <div class="pastebox"><span class="lbl">Windows</span> <span class="file">.venv\Scripts\python.exe -m app.seed</span></div>
+      <div class="see"><b>What you'll see:</b> <span class="file">seeded — 12 listings</span>. That's it — three sample listings in each of New York, Miami and Los Angeles, plainly labeled "Demo Realty" so they're never mistaken for a real broker. This is the only line in this whole guide you type instead of click.</div></div>
   </div>
-  <div class="milestone"><h3>🎉 <span class="big">You're in — that's the setup.</span></h3><p>Pick a metro and search right now — four cities, a small demo of listings, a map, no key required. Start/stop anytime with the <span class="file">Start OpenLease</span> / <span class="file">Stop OpenLease</span> files; turn the page to add the AI.</p></div>
+  <div class="milestone"><h3>🎉 <span class="big">You're in — that's the setup.</span></h3><p>Pick a metro and search right now — three cities, 12 sample listings, a map, no key required. Start/stop anytime with the <span class="file">Start OpenLease</span> / <span class="file">Stop OpenLease</span> files; turn the page to add the AI.</p></div>
 </section>
 
 <!-- ============ PHASE 3 ============ -->
@@ -92,16 +96,16 @@
       <li>You'll see a labeled box for each key. <strong>Paste</strong> your key into the box with the matching name, then click <strong>Save</strong>.</li>
       <li>The Settings page shows which capabilities are <strong>live</strong> next to what you just switched on. Done — no restart, ever.</li>
     </ol>
-    <div class="warn" style="margin-top:9px"><b>None of these are required to search.</b> The demo listings, a CSV you import, and the free government feeds already carry full address/size/rent with no key at all. A key only matters for two things: letting you type a sentence instead of picking filters (and getting a written reply), and letting the crawler read size/rent off an ordinary broker page that doesn't publish them as structured data.</div>
+    <div class="warn" style="margin-top:9px"><b>None of these are required to search.</b> The sample listings, a CSV you import, and the free government feeds already carry full address/size/rent with no key at all. Each key below unlocks exactly one thing: <strong>Anthropic</strong> lets you type a sentence instead of picking filters, writes the reply, and reads size/rent off an ordinary broker page that doesn't publish them structurally; <strong>Voyage</strong> sharpens ranking; <strong>Google Maps</strong> adds a Street View photo.</div>
   </div>
 
-  <div class="keycard"><div class="head"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="#3457c9" stroke-width="2"><path d="M12 3v3M12 18v3M4.2 7l2.6 1.5M17.2 15.5l2.6 1.5M4.2 17l2.6-1.5M17.2 8.5l2.6-1.5"/><circle cx="12" cy="12" r="3.2"/></svg></div><div class="t"><h3>Anthropic (Claude)</h3><div class="u">Plain‑English search, the conversational reply, per‑listing chat, and reading size/rent off pages that don't publish them structurally</div></div><div class="cost"><div class="amt">~$5–20/mo</div>pay as you go</div></div>
+  <div class="keycard"><div class="head"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="#3457c9" stroke-width="2"><path d="M12 3v3M12 18v3M4.2 7l2.6 1.5M17.2 15.5l2.6 1.5M4.2 17l2.6-1.5M17.2 8.5l2.6-1.5"/><circle cx="12" cy="12" r="3.2"/></svg></div><div class="t"><h3>Anthropic (Claude)</h3><div class="u">Plain‑English search, the conversational reply, per‑listing chat, and reading size/rent off pages that don't publish them structurally</div></div><div class="cost"><div class="amt">Pay‑as‑you‑go</div>metered per call</div></div>
     <div class="body"><ol>
       <li>Go to <strong>console.anthropic.com</strong> and sign up (email or Google), confirming your email.</li>
-      <li>Click <strong>Billing</strong> → add a card → <strong>Buy credits</strong> (a few dollars is enough to start). <em>Do this first — the key won't work without credit.</em></li>
+      <li>Click <strong>Billing</strong> → add a card → <strong>Buy credits</strong>. <em>Do this first — the key won't work without credit.</em></li>
       <li>Click <strong>API Keys</strong> → <strong>Create Key</strong>, then <strong>copy it right away</strong> (it's shown only once).</li>
       <li>In OpenLease: Settings → paste into <strong>Anthropic API key</strong> → <strong>Save</strong>.</li>
-    </ol><div class="meta"><span>⏱ ~5 min</span><span>💳 A few cents per AI action; you prepay and spend down slowly</span><span>Key starts with <span class="mono">sk‑ant‑</span></span></div></div></div>
+    </ol><div class="meta"><span>⏱ ~5 min</span><span>💳 Capped by the monthly budget you set on the same Settings page — OpenLease refuses to spend past it</span><span>Key starts with <span class="mono">sk‑ant‑</span></span></div></div></div>
 
   <div class="keycard"><div class="head"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="#3457c9" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h7"/><circle cx="19" cy="17" r="2.3"/></svg></div><div class="t"><h3>Voyage AI</h3><div class="u">Semantic ranking — matches "creative loft office" to a listing that never uses those words</div></div><div class="cost"><div class="amt">~Free</div>generous free tier</div></div>
     <div class="body"><ol>
@@ -117,14 +121,14 @@
       <li>In OpenLease: Settings → paste into <strong>Google Maps key</strong> → <strong>Save</strong>.</li>
     </ol><div class="meta"><span>⏱ ~5 min</span><span>💡 Requires a billing‑enabled Google Cloud project, even though ordinary personal use stays inside the free tier</span><span>Nothing else in OpenLease uses this key</span></div></div></div>
 
-  <div class="note"><b>Which keys do you actually need?</b> If you just want the four metros, the map, parcel data, and Walk/Transit Score — nothing. It already works. Add <strong>Anthropic</strong> when you want to type a sentence instead of picking filters, want the written reply and per‑listing chat, or want the crawler to read size/rent off an ordinary web page. Add <strong>Voyage</strong> once you have enough listings that "similar to this one" is worth having — it's nearly free. Add <strong>Google Maps</strong> only for the Street View thumbnail.</div>
+  <div class="note"><b>Which keys do you actually need?</b> If you just want the three metros, the map, parcel data, and Walk/Transit Score — nothing. It already works. Add <strong>Anthropic</strong> when you want to type a sentence instead of picking filters, want the written reply and per‑listing chat, or want the crawler to read size/rent off an ordinary web page. Add <strong>Voyage</strong> once you have enough listings that "similar to this one" is worth having — its free tier alone covers a corpus this size roughly 400× over. Add <strong>Google Maps</strong> only for the Street View thumbnail.</div>
 </section>
 
 <!-- ============ FIRST SEARCH ============ -->
 <section class="page break">
   <div class="eyebrow">Your first search</div>
   <h2 class="sec">Try the exact search this guide is written around.</h2>
-  <p class="lead">This isn't a hypothetical example — it's the search this whole guide, and the app's own README, describe. With the demo listings loaded (they load automatically) and <strong>no API key configured</strong>, do this:</p>
+  <p class="lead">This isn't a hypothetical example — it's the search this whole guide, and the app's own README, describe. With the sample listings loaded (Phase 2, step 5) and <strong>no API key configured</strong>, do this:</p>
 
   <div class="steps">
     <div class="step"><div class="dot">1</div><h3>Pick Miami</h3><p>At the top of the OpenLease home page, set the metro to <strong>Miami</strong>.</p></div>
@@ -132,10 +136,10 @@
       <div class="pastebox"><span class="lbl">Search</span> <span class="file">retail in Wynwood ~1,500 SF under $8k/mo</span></div></div>
     <div class="step"><div class="dot">3</div><h3>Read the banner</h3><p>$8,000/mo works out to a rent cap of about <strong>$64/SF/yr</strong> for a 1,500 SF space (<span class="mono">8000 × 12 ÷ 1500</span>). The one listing that otherwise matches — 2618 NW 2nd Ave, Wynwood — actually asks <strong>$95/SF/yr</strong>.</p>
       <div class="see"><b>What you'll see:</b> a banner across the results plainly saying the rent cap was relaxed to surface this listing, instead of either hiding zero results or quietly pretending it was a clean match. One result card, one pin on the map.</div></div>
-    <div class="step"><div class="dot">4</div><h3>Open the listing</h3><p>Click the result card. You'll land on a listing page with a Walk Score breakdown (per amenity category), a parcel panel (owner/zoning where the county publishes it), and a <strong>Save</strong> button.</p></div>
+    <div class="step"><div class="dot">4</div><h3>Open the listing</h3><p>Click the result card. You'll land on a listing page with a <strong>Save</strong> button and a parcel panel — for this exact address it honestly reads <span class="file">No parcel matched</span> rather than guessing. There's no Walk Score or Transit Score here yet: those come from a separate enrichment pass, which you run once with <span class="file">POST /api/enrich</span>. Do that and this listing scores <strong>86</strong>, with the per-category breakdown that explains it. Until you do, the row is simply <em>absent</em> — never a fake zero, because a zero is a real Walk Score (it means car-dependent) and you'd have no way to tell the two apart.</p></div>
   </div>
 
-  <div class="milestone"><h3><span class="big">That's the whole promise, in one search.</span></h3><p>Real listing, real map pin, an honest banner about what it had to relax to find it — and not one API key was used anywhere in this walkthrough.</p></div>
+  <div class="milestone"><h3><span class="big">That's the whole promise, in one search.</span></h3><p>Real listing, real map pin, an honest banner about what it had to relax to find it, and honest gaps instead of invented numbers where the data isn't there — and not one API key was used anywhere in this walkthrough.</p></div>
 </section>
 
 <!-- ============ WHERE LISTINGS COME FROM ============ -->
@@ -168,37 +172,25 @@
     <div class="fixrow"><div class="p">Miami — zoning (incorporated cities)</div><div class="f">Miami‑Dade's county zoning layer only covers unincorporated land. Inside cities like Wynwood and Brickell, OpenLease falls through to the municipal layer — and it's still blank wherever neither one publishes.</div></div>
   </div>
 
-  <div class="note" style="margin-top:16px"><b>A tool that guesses is worse than a tool that admits it doesn't know.</b> Every one of these reads "not published here," with the specific reason, rather than a silent blank or an invented value.</div>
+  <div class="see" style="margin-top:12px"><b>Why Chicago, if it isn't one of the three metros?</b> Chicago's parcels, transit and scoring are fully built and tested — it's just not in the metro switcher. No Chicago brokerage the crawler checked publishes inventory outside a JavaScript search app, and OpenLease doesn't write per‑site scrapers, so a Chicago metro would show up empty. Import a Chicago CSV and it works today.</div>
+  <div class="note" style="margin-top:12px"><b>A tool that guesses is worse than a tool that admits it doesn't know.</b> Every one of these reads "not published here," with the specific reason, rather than a silent blank or an invented value.</div>
 </section>
 
 <!-- ============ COSTS ============ -->
 <section class="page break">
   <div class="eyebrow">Straight talk about money</div>
   <h2 class="sec">What it really costs.</h2>
-  <p class="lead">OpenLease itself is free — you only pay the AI providers for what you use, at <strong>their</strong> price, with no markup. Here's an honest estimate so nothing surprises you.</p>
+  <p class="lead">OpenLease itself is free, and needs no key at all. Everything below is what stays free forever versus what a key unlocks — and how the app keeps a key from ever surprising you.</p>
 
   <div class="costtable">
-    <div class="costrow"><div class="w"><div class="n">Anthropic (Claude) — search, replies, chat, extraction</div><div class="d">A few cents per AI action, prepaid and spent down.</div></div><div class="amt">$5–20<small>per month, as you use it</small></div></div>
-    <div class="costrow"><div class="w"><div class="n">Voyage AI — semantic ranking</div><div class="d">Free tier covers this corpus roughly 400× over.</div></div><div class="amt">$0<small>essentially always free</small></div></div>
-    <div class="costrow"><div class="w"><div class="n">Google Maps — Street View thumbnail</div><div class="d">One image per listing view; ordinary personal use stays inside the free tier.</div></div><div class="amt">$0<small>free tier, personal use</small></div></div>
-    <div class="costrow"><div class="w"><div class="n">Parcels, storefront vacancy, Walk/Transit Score, OSRM</div><div class="d">Real government and OpenStreetMap data. No meaningful limits.</div></div><div class="amt">$0<small>always free</small></div></div>
+    <div class="costrow"><div class="w"><div class="n">Parcels, Walk/Transit Score, full‑text search, the crawler, CSV import, NYC storefront import, portfolios/saves/export/map</div><div class="d">Free public data and code that ships in the app. No key, no account, no limit.</div></div><div class="amt">$0<small>always, no key</small></div></div>
+    <div class="costrow"><div class="w"><div class="n">Anthropic — plain‑English search, replies, chat, extraction</div><div class="d">Metered pay‑as‑you‑go against the budget cap you set in Settings.</div></div><div class="amt">Metered<small>capped, and cached</small></div></div>
+    <div class="costrow"><div class="w"><div class="n">Voyage — semantic ranking</div><div class="d">Its free tier alone covers a corpus this size roughly 400× over.</div></div><div class="amt">$0<small>free tier is enough</small></div></div>
+    <div class="costrow"><div class="w"><div class="n">Google Maps — Street View embed</div><div class="d">Needs a billing‑enabled Google Cloud project to generate the key at all.</div></div><div class="amt">Metered<small>Google's own pricing</small></div></div>
   </div>
 
-  <div class="bottomline">
-    <div class="blcard you">
-      <h4>Your likely bill</h4>
-      <div class="row"><span>Keyless (demo data / your CSV / gov feeds only)</span><span>$0/mo</span></div>
-      <div class="row"><span>Occasional AI use</span><span>~$5–15/mo</span></div>
-      <div class="row"><span>Daily use, several metros</span><span>~$20–40/mo</span></div>
-      <p style="margin:10px 0 0;font-size:9.6pt;color:var(--on-ink-mute)">…and you're paying the AI providers directly — at cost, no seats, no expiring credits.</p>
-    </div>
-    <div class="blcard them">
-      <h4>The commercial subscriptions this replaces</h4>
-      <div class="price">Hundreds<span style="font-size:11pt;color:var(--slate)">/mo per seat</span></div>
-      <p style="margin:2px 0 0;font-size:10pt;color:var(--slate)">Typically an annual contract, a per‑seat fee, and a sales call before you see a price at all.</p>
-    </div>
-  </div>
-  <div class="note" style="margin-top:16px"><b>Rule of thumb:</b> only add the keys you'll actually use, and keep an eye on the spend meter at the top of the app. It caps paid calls at a monthly limit you set in Settings.</div>
+  <div class="note calm" style="margin-top:16px"><b style="color:var(--navy)">The safety net: a budget cap and a cache.</b> Every paid call is checked against the <span class="file">Monthly paid‑spend cap</span> you set on the Settings page — OpenLease refuses to spend past it. Every response is also cached, so asking the same thing twice never bills you twice. There's no subscription and no per‑seat fee behind any of this: you're paying Anthropic, Voyage or Google directly, at their price, with nothing added.</div>
+  <div class="note" style="margin-top:12px"><b>Rule of thumb:</b> start with no keys — the sample data and any CSV or crawl you bring already work. Add Anthropic the moment you'd rather type a sentence than pick filters, and set the spend cap to whatever you're comfortable never exceeding.</div>
 </section>
 
 <!-- ============ CLOSING ============ -->
@@ -214,7 +206,7 @@
     </div>
     <div class="foot">
       <div class="logo on-dark sm"><img src="assets/fintok-logo.jpeg" alt=""><span class="wm">Fintok.news</span></div>
-      <div class="tag">OpenLease — made to be owned, not rented.</div>
+      <div class="tag">OpenLease — made to be owned, not rented.<br>Licensed PolyForm Noncommercial 1.0.0 — free for anything except selling it.</div>
     </div>
   </div>
 </section>

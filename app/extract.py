@@ -434,6 +434,16 @@ _SIZE_LABEL = re.compile(
     r"(?:size|space available|sf\s+available|square\s+footage|divisible)"
     r"\s*[:\-\u2013]?\s*([\d][\d,]{1,8})\s*(?:\+/-\s*)?"
     r"(?:SF\b|sq\.?\s?ft|square\s+feet)", re.I)
+# ...but the word "size" is not always THIS SPACE's size. "Building Size", "Typical Floor
+# Size" and "Lot Size" all contain it, and all three name something a tenant cannot lease.
+_SIZE_DECOY = re.compile(
+    r"building|typical\s+floor|floor\s+plate|floorplate|lot|land|site|total|"
+    r"min(?:imum)?|max(?:imum)?", re.I)
+_SIZE_DECOY_WINDOW = 22
+
+
+def _size_decoyed(text: str, at: int) -> bool:
+    return bool(_SIZE_DECOY.search(text[max(0, at - _SIZE_DECOY_WINDOW):at]))
 
 
 # A broker page for a MULTI-TENANT BUILDING has no single "size", and Rexford's pages say so
@@ -497,14 +507,32 @@ def _size_of(text: str) -> int | None:
     """
     from collections import Counter
     building = _building_sf(text)          # explicitly NOT this listing's size
-    found = [_num(s) for s in _SIZE.findall(text)]
+    # A figure introduced by "Building Size", "Typical Floor Size" or "Lot Size" describes
+    # the property, not the space — and it is excluded HERE, before it can be counted, not
+    # just from the labelled shortlist below. Blanca's towers publish a spec sheet
+    # ("Building Size: 625,800 SF ... Typical Floor Size: 17,881 SF") and send you to a
+    # third party for the actual availabilities, so EVERY square footage on the page is a
+    # building spec. Excluding only the tower left the floorplate as the last candidate
+    # standing, and a floorplate is not an availability either. When a page states no
+    # leasable size, the honest answer is that we don't have one.
+    found = [_num(m.group(1)) for m in _SIZE.finditer(text)
+             if not _size_decoyed(text, m.start())]
     found = [s for s in found if _MIN_SF <= s <= _MAX_SF and s != building]
     if not found:
         return None
     counts = Counter(found)
 
-    labelled = [_num(s) for s in _SIZE_LABEL.findall(text)]
-    labelled = [s for s in labelled if _MIN_SF <= s <= _MAX_SF]
+    # A LABEL can lie about what it labels. Blanca's spec sheet reads
+    #   "Building Size: 625,800 SF ... Typical Floor Size: 17,881 SF"
+    # and _SIZE_LABEL matches the word "Size" INSIDE "Building Size" — so the labelled
+    # branch confidently handed back 625,800, the very number _building_sf had just
+    # excluded as the tower. Two guards, and both are needed:
+    #   1. the building is not a candidate here either (it was already dropped from `found`);
+    #   2. a size labelled as the BUILDING's, the LOT's, or a TYPICAL FLOOR's is not the
+    #      size of the space you can lease. A floorplate is not an availability.
+    labelled = [_num(m.group(1)) for m in _SIZE_LABEL.finditer(text)
+                if not _size_decoyed(text, m.start())]
+    labelled = [s for s in labelled if _MIN_SF <= s <= _MAX_SF and s != building]
     if labelled:
         v = labelled[0]
         # A label is not proof. "Size  1,000 SF  1,999 SF  4,999 SF" is a DROPDOWN whose
@@ -721,8 +749,29 @@ def from_html_facts(html: str, url: str, src: dict, metro: str) -> dict | None:
                        txt[:4000], re.I) and not re.search(r"\bfor\s+lease\b", txt[:4000], re.I):
             d["transaction_type"] = "sale"
 
-    # An address alone is not a listing — the hard filter runs on SF and rent.
-    if not (d.get("size_sf") or d.get("asking_rent") or d.get("sale_price")):
+    # A suite cannot be larger than the building it is in. When it comes out that way we have
+    # mixed up two different figures on the page (1355 Alton reported a 7,000 SF space inside
+    # a 3,500 SF building), and we do not know WHICH one is wrong — so we drop the one we are
+    # less sure of. The building size is stated under a label; the space size was inferred.
+    if (d.get("size_sf") and d.get("total_building_sf")
+            and d["size_sf"] > d["total_building_sf"]):
+        log.info("%s: %s SF space inside a %s SF building is impossible — dropping the size",
+                 url, d["size_sf"], d["total_building_sf"])
+        d.pop("size_sf", None)
+        d.pop("divisible_min_sf", None)
+        d.pop("divisible_max_sf", None)
+
+    # An address alone is not a listing — the hard filter runs on SF and rent, and a page
+    # that yields neither is a link directory entry, not supply.
+    #
+    # A BUILDING size counts, though. Blanca's towers publish a spec sheet and send you to a
+    # third party for the suite-level availabilities, so we can honestly say "1450 Brickell,
+    # a 625,800 SF Class A office tower in Brickell" and nothing about what's free inside it.
+    # That is a real property a tenant searching "office in Brickell" should see, with a link
+    # to the broker for the availabilities. Requiring a SUITE size dropped it on the floor.
+    # It simply cannot match "~1,500 SF", which is correct: we don't know that it does.
+    if not (d.get("size_sf") or d.get("asking_rent") or d.get("sale_price")
+            or d.get("total_building_sf")):
         return None
 
     d = _clean(d, src, url, metro)
