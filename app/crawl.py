@@ -454,19 +454,42 @@ def metro_for(lat: float, lng: float) -> str | None:
     return None
 
 
-def _out_of_market(d: dict, metro: str) -> bool:
-    """Reject a listing whose own URL says it is in another state — BEFORE geocoding it.
+STATE_METRO = {v: k for k, v in METRO_STATE.items()}   # "fl" -> "mia"
 
-    A bbox check after geocoding cannot catch this, because a metro-scoped geocoder does
-    not decline: NYC GeoSearch, handed "302 south colonial drive cleburne TX", returns
-    coordinates in BROOKLYN. The wrong answer is already inside the bbox by the time
-    `_place` sees it. RIPCO's feed is national, and this is the only signal that says so.
+
+def _out_of_market(d: dict, metro: str) -> bool:
+    """Handle a listing whose own URL says it is in another state — BEFORE geocoding it.
+
+    Two different things can be true of such a listing, and the original version of this
+    guard conflated them by dropping both.
+
+    It has to run before the geocode, because a metro-scoped geocoder does not decline:
+    NYC GeoSearch, handed "302 south colonial drive cleburne TX", returns coordinates in
+    BROOKLYN. The wrong answer is already inside the bbox by the time `_place` sees it.
+    So Cleburne TX is dropped here, and that part was right.
+
+    But RIPCO's feed is NATIONAL — 833 listings — and it is filed under `nyc` because that
+    is where RIPCO is headquartered, not because that is all it sells. Dropping every
+    non-NY row threw away RIPCO's entire Florida and California book: the firm is one of
+    the largest RETAIL brokerages in Miami, and Miami is the metro this product demos in.
+    We were deleting the answer to our own example query.
+
+    A state we cover is not out of market — it is in a DIFFERENT one of our markets. Route
+    it there (so it gets that metro's geocoder, which is the whole reason this runs early)
+    and let `_place` confirm by bbox. Only a state we do not cover is actually dropped.
     """
     st = d.get("geo_state")
-    if st and st != METRO_STATE.get(metro):
-        log.info("%s: %r is in %s, not %s — dropping (out of market)",
-                 d.get("source"), d.get("address"), st.upper(), metro)
+    if not st or st == METRO_STATE.get(metro):
+        return False
+    target = STATE_METRO.get(st)
+    if target is None:
+        log.info("%s: %r is in %s, which we do not cover — dropping",
+                 d.get("source"), d.get("address"), st.upper())
         return True
+    if target != metro:
+        log.info("%s: %r is in %s, not %s — re-routing to %s",
+                 d.get("source"), d.get("address"), st.upper(), metro, target)
+        d["metro"] = target        # geocode it as what it IS; _place confirms by bbox
     return False
 
 

@@ -74,6 +74,17 @@ mia:
     feed: https://www.terranovacorp.com/wp-json/wp/v2/property?per_page=100
     rung: feed_wp        # 16 listings via a public WP feed. Was `html` (the LLM rung).
     tier: default
+  - key: blanca
+    name: Blanca Commercial Real Estate
+    url: https://blancacre.com/properties
+    rung: html           # server-rendered; the facts rung reads them. No feed, no JSON-LD.
+    tier: default
+    # 73 /properties/<slug> detail pages in its own sitemap.xml — Brickell, Coral Gables,
+    # Miami Beach, Downtown. This is the source that gives Miami an actual office/retail
+    # book. Its pages DO link out to LoopNet for suite-level availability, but that is an
+    # <a href>, not an embed: the address, the size and the description are served from
+    # Blanca's own domain, which is all we read. We follow the link with our eyes, not
+    # with the crawler.
   # (RIPCO's Miami inventory arrives via the single `ripco` entry under nyc — see the note
   # there. Its `?locations=Miami` filter is not honored by the WP REST API anyway: the feed
   # returns the same national 833 either way.)

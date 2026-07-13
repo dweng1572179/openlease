@@ -742,7 +742,16 @@ def test_a_national_feed_is_filtered_by_state_BEFORE_geocoding():
 
     fl = {"address": "2618 NW 2nd Ave", "geo_state": "fl", "source": "ripco"}
     assert crawl._out_of_market(fl, "mia") is False      # Florida IS Miami's state
-    assert crawl._out_of_market(fl, "chi") is True       # ...but not Chicago's
+
+    # ...and a Florida listing found on a CHICAGO source is not garbage — it is a MIAMI
+    # listing that happens to have turned up somewhere else. Dropping it (which is what
+    # this test used to assert) is how RIPCO's entire Florida book got deleted. Re-route
+    # it, so it gets Miami's geocoder rather than Chicago's, and let _place confirm by
+    # bbox. Texas above is the case that must still be dropped: we don't cover it, so
+    # there is no geocoder that would answer honestly.
+    fl2 = {"address": "2618 NW 2nd Ave", "geo_state": "fl", "source": "ripco", "metro": "chi"}
+    assert crawl._out_of_market(fl2, "chi") is False
+    assert fl2["metro"] == "mia"
 
     unknown = {"address": "somewhere", "source": "x"}    # no slug state -> we don't guess
     assert crawl._out_of_market(unknown, "nyc") is False
@@ -884,3 +893,33 @@ def test_real_listing_urls_still_pass():
                 "https://x.com/listings/450-park-ave",
                 "https://x.com/available-space/2618-nw-2nd-ave"]:
         assert crawl.is_listing_page(url), f"the crawler dropped a real listing: {url}"
+
+
+def test_a_state_we_cover_is_rerouted_not_dropped():
+    """RIPCO's feed is NATIONAL (833 listings) and is filed under nyc because that is where
+    RIPCO is headquartered, not because that is all it sells. The old guard dropped every
+    non-NY row, which threw away the firm's entire Florida book — RIPCO is one of the
+    largest RETAIL brokerages in Miami, and Miami is the metro this product demos in. We
+    were deleting the answer to our own example query."""
+    d = {"address": "20295 NW 2nd Ave", "geo_state": "fl", "metro": "nyc", "source": "ripco"}
+    assert crawl._out_of_market(d, "nyc") is False
+    assert d["metro"] == "mia", "a Florida listing must be geocoded as Miami, not New York"
+
+    d = {"address": "1234 Sunset Blvd", "geo_state": "ca", "metro": "nyc", "source": "ripco"}
+    assert crawl._out_of_market(d, "nyc") is False
+    assert d["metro"] == "la"
+
+
+def test_a_state_we_do_not_cover_is_still_dropped():
+    """The guard runs BEFORE the geocode for a reason: NYC GeoSearch, handed
+    '302 south colonial drive cleburne TX', returns coordinates in BROOKLYN. The wrong
+    answer is already inside the bbox by the time _place sees it."""
+    for state in ("tx", "nj", "oh"):
+        d = {"address": "302 S Colonial Dr", "geo_state": state, "metro": "nyc"}
+        assert crawl._out_of_market(d, "nyc") is True, f"{state} must never reach a geocoder"
+
+
+def test_the_configured_state_passes_untouched():
+    d = {"address": "450 Park Ave", "geo_state": "ny", "metro": "nyc"}
+    assert crawl._out_of_market(d, "nyc") is False
+    assert d["metro"] == "nyc"
