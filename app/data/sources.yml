@@ -68,15 +68,13 @@ nyc:
   # greiner_maltz: PARKED. No sitemap; its inventory is a keyless JSON API
   # (/api/properties.ashx) behind an empty <div id="app">. Worth ~316 industrial listings
   # with sizes, but it needs a generic `json` rung the ladder does not have yet.
-  - key: slgreen
-    name: SL Green Realty
-    url: https://slgreen.com/properties/
-    feed: https://slgreen.com/wp-json/wp/v2/properties?per_page=100
-    rung: feed_wp
-    crawl_delay: 10          # their robots.txt asks for it
-    tier: default
-    # NYC's largest office landlord, publishing its OWN availabilities: 33 buildings,
-    # 204 suites, every one with a square footage. Rent is "Upon Request" throughout.
+  # slgreen: PARKED. NYC's largest office landlord, 33 buildings / 204 suites, all with a
+  # square footage. But its wp-json feed is ONE-TO-MANY like SquareFoot — each item is a
+  # BUILDING carrying acf.spaces[] — and the feed_wp rung took the building's TOTAL as the
+  # suite size (500 Park Avenue went in as a 335,000 SF "suite", 245 Park as 1.75M). The fix
+  # is the same shape as the nextdata rung: emit one row per space, keyed #space-<id>. Worth
+  # ~204 listings once the feed rung learns one-to-many.
+  # - key: slgreen  (see above — re-enable with the multi-space feed fix)
   - key: modcre
     name: MOD Commercial Real Estate
     url: https://modcre.com/listings
