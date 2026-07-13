@@ -13,7 +13,8 @@
        escape `"`, so the first quote of the suggestion terminated the onclick attribute and
        the rest of the handler was parsed as junk boolean attributes. Every suggestion chip
        was a no-op. Line 25 below already got this right. #}
-    <button class="rounded-full border px-3 py-1 text-xs text-slate-600 hover:bg-slate-50"
+    <button data-suggestion
+            class="rounded-full border px-3 py-1 text-xs text-slate-600 hover:bg-slate-50"
             onclick="document.querySelector('[name=message]').value = {{ s | tojson | forceescape }};
                      htmx.trigger(document.querySelector('form'), 'submit')">{{ s }}</button>
     {% endfor %}

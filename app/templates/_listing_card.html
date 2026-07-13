@@ -2,11 +2,17 @@
    class="block mb-2 rounded-lg border bg-white p-3 hover:border-sky-400">
   <div class="flex items-start justify-between gap-3">
     <div>
-      <p class="font-medium text-sm">{{ l.address }}</p>
+      <p class="font-medium text-sm">
+        {# type badge — a broker scans a list of these; the type is the first cut #}
+        {% if l.propertyType %}
+        <span class="mr-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] uppercase tracking-wide
+                     text-slate-500 align-middle">{{ l.propertyType }}</span>
+        {% endif %}{{ l.address }}
+      </p>
       <p class="text-xs text-slate-500">
         {{ l.neighborhood or l.borough or '' }}
-        {% if l.propertyType %}· {{ l.propertyType }}{% endif %}
         {% if l.sizeSf %}· {{ "{:,}".format(l.sizeSf) }} SF{% endif %}
+        {% if l.transactionType == 'sale' %}· for sale{% endif %}
       </p>
       {# l.rationale is computed per-QUERY by rank.py and is never persisted on the row --
          a listing reached via db.list_saved()/portfolio_items() (T13, no ranking pass)
@@ -35,6 +41,13 @@
       <p class="text-xs text-slate-400">ask on request</p>
       {% endif %}
       {% if l.walkScore is not none %}<p class="text-[10px] text-slate-400">walk {{ l.walkScore }}</p>{% endif %}
+      {# Save from the results list. A broker shortlists while scanning; making them open
+         each listing to save it is the difference between a tool and a demo.
+         The <a> wrapping this card would swallow the click, so stop it. #}
+      <button hx-post="/listings/{{ l.id }}/save" hx-swap="outerHTML"
+              onclick="event.preventDefault(); event.stopPropagation();"
+              class="mt-1 rounded border px-1.5 py-0.5 text-[10px] text-slate-500 hover:border-sky-400">
+        Save</button>
     </div>
   </div>
 </a>

@@ -180,12 +180,14 @@ def test_suggestion_chips_are_not_broken_html(client):
 
     class _P(HTMLParser):
         def handle_starttag(self, tag, attrs):
-            if tag == "button":
-                d = dict(attrs)
-                if "onclick" in d:
-                    handlers.append(d["onclick"])
-                # a truncated attribute leaks the rest of the handler as bare attributes
-                assert not any(v is None and k not in ("disabled",) for k, v in attrs), attrs
+            d = dict(attrs)
+            if tag != "button" or "data-suggestion" not in d:
+                return
+            if "onclick" in d:
+                handlers.append(d["onclick"])
+            # a truncated attribute leaks the rest of the handler as bare attributes
+            # ("show", "only", "ground", 'floor";') — that is the bug this test exists for
+            assert not any(v is None and k != "data-suggestion" for k, v in attrs), attrs
 
     _P().feed(r.text)
     assert handlers, "no onclick survived the parse — the attribute was truncated"
