@@ -47,6 +47,91 @@ nyc:
     rung: html
     tier: stealth        # 403 to a plain fetch
 
+  # ---- added 2026-07-13 from a verified source hunt (50 agents; every candidate
+  # independently re-fetched by a second agent before it was accepted). These close the
+  # "listings with TERMS" gap: the app had ~700 in NYC against a ~10,000 market, and a
+  # listing with no SF and no ask is invisible to the hard filter, which runs on exactly
+  # those two fields.
+  #
+  # NOT ADDED, deliberately: squarefoot.com. It would have been the single largest source
+  # on the list — ~15,000 listings, more than the entire stated market — and that is the
+  # tell. It is an AGGREGATOR MARKETPLACE, not a broker's own book. It passes our written
+  # rules (no iframe, no blacklisted vendor, no auth wall), and we refuse it anyway:
+  # crawling an aggregator IS the CoStar v. CREXi fact pattern, and having declined
+  # LoopLink for that exact reason, taking SquareFoot would be incoherent.
+  - key: optimal_spaces
+    name: Optimal Spaces
+    url: https://www.optimalspaces.com/sitemap.xml
+    rung: html
+    tier: default
+    # 2,437 detail URLs. The biggest source on the list by far — and the one most likely to
+    # poison the index: every page ALSO renders 40+ OTHER buildings under "Nearby Spaces".
+    # Watch its yield in the corpus sweep before trusting it.
+  - key: greiner_maltz
+    name: Greiner-Maltz Real Estate
+    url: https://www.greinermaltz.com/property-search/
+    rung: html
+    tier: default
+    # Queens/Brooklyn/Bronx/LIC industrial.
+  - key: slgreen
+    name: SL Green Realty
+    url: https://slgreen.com/properties/
+    feed: https://slgreen.com/wp-json/wp/v2/properties?per_page=100
+    rung: feed_wp
+    crawl_delay: 10          # their robots.txt asks for it
+    tier: default
+    # NYC's largest office landlord, publishing its OWN availabilities: 33 buildings,
+    # 204 suites, every one with a square footage. Rent is "Upon Request" throughout.
+  - key: modcre
+    name: MOD Commercial Real Estate
+    url: https://modcre.com/listings
+    rung: html
+    tier: default
+    # Small (88) but it carries REAL ASKING RENTS ($65/SF), which almost nothing else does.
+    # Worth more than its count.
+  - key: terracrg
+    name: TerraCRG
+    url: https://www.terracrg.com/listings/for-lease/
+    rung: html
+    tier: default
+  - key: sinvin
+    name: Sinvin Real Estate
+    url: https://sinvin.com/listings/
+    rung: html
+    tier: default
+  - key: durst
+    name: The Durst Organization
+    url: https://www.durst.org/availabilities/
+    rung: html
+    tier: default
+  - key: rudin
+    name: Rudin Management
+    url: https://rudin.com/commercial/availabilities
+    rung: html
+    tier: default
+  - key: esrt
+    name: Empire State Realty Trust
+    url: https://www.esrtreit.com/properties
+    rung: html
+    tier: default
+  - key: kalmon_dolgin
+    name: Kalmon Dolgin Affiliates
+    url: https://www.kalmondolgin.com/properties/
+    rung: html
+    tier: default
+  - key: katz_nyc
+    name: Katz & Associates
+    url: https://katzretail.com/listings
+    rung: html
+    tier: default
+  - key: besen
+    name: Besen Partners
+    url: https://besenpartners.com/property-status/for-lease/
+    feed: https://besenpartners.com/wp-json/wp/v2/properties?per_page=100
+    rung: feed_wp
+    crawl_delay: 10
+    tier: default
+
 mia:
   # metro1 (Metro 1) removed 2026-07-12, on purpose, and this one is a JUDGMENT not a defect.
   # Its site is Squarespace with NO inventory in the HTML at all: /listings is a 1.2MB shell
@@ -89,6 +174,23 @@ mia:
   # there. Its `?locations=Miami` filter is not honored by the WP REST API anyway: the feed
   # returns the same national 833 either way.)
 
+  - key: apex_capital
+    name: APEX Capital Realty
+    url: https://apexcapitalrealty.com/properties/
+    rung: html
+    tier: default
+  - key: fausto
+    name: Fausto Commercial Realty Consultants
+    url: https://faustocommercial.com/properties/
+    feed: https://faustocommercial.com/wp-json/wp/v2/properties?per_page=100
+    rung: feed_wp
+    tier: default
+  - key: chariff
+    name: Chariff Realty Group
+    url: https://chariff.com/listings/
+    rung: html
+    tier: default
+
 la:
   - key: avison_la
     name: Avison Young (LA)
@@ -103,6 +205,18 @@ la:
   - key: westmac
     name: WESTMAC Commercial
     url: https://www.westmac.com/listings
+    rung: html
+    tier: default
+
+  - key: beta_agency
+    name: Beta Agency
+    url: https://www.betaagency.com/places
+    rung: html
+    tier: default
+    # the largest verified LA source in the hunt
+  - key: perform_properties
+    name: Perform Properties
+    url: https://performproperties.com/properties/
     rung: html
     tier: default
 
