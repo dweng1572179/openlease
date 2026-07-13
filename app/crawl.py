@@ -351,9 +351,14 @@ def sitemap_urls(base: str, src: dict) -> list[str]:
     # (avisonyoung.us/web/los-angeles/properties-for-lease) pulls that firm's NATIONAL
     # inventory. Keep only what sits under the source's own path — the rest is another
     # market's, and correctness would otherwise rest entirely on the out-of-market guard.
-    scope = urlparse(base).path.rstrip("/")
-    if scope and scope not in ("", "/"):
-        scoped = [u for u in locs if urlparse(u).path.startswith(scope) or u.endswith(".xml")]
+    # Scope to the source path's PARENT — "/web/los-angeles/properties-for-lease" is a page,
+    # and the listings under it live at "/web/los-angeles/properties/…". The parent is the
+    # market; the leaf is just the index page we were pointed at.
+    parts = [p for p in urlparse(base).path.split("/") if p]
+    scope = "/" + "/".join(parts[:-1]) if len(parts) > 1 else ""
+    if scope:
+        scoped = [u for u in locs
+                  if u.endswith(".xml") or urlparse(u).path.startswith(scope)]
         if scoped:
             locs = scoped
     children = [u for u in locs if u.endswith(".xml")]
