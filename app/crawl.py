@@ -333,6 +333,7 @@ NOT_A_PAGE_RE = re.compile(r"\.(pdf|jpe?g|png|gif|webp|svg|docx?|xlsx?|pptx?|zip
 # /articles/wynwood-nightclub-building-hits-the-market. Metro 1's entire Miami "inventory"
 # was three blog posts. An editorial path is never inventory, whatever words it contains,
 # so this is checked FIRST and wins.
+_DATED_PATH = re.compile(r"/(?:19|20)\d\d/\d\d?/")     # /2018/01/18/... is a post, always
 EDITORIAL_RE = re.compile(
     r"/(articles?|news|blog|posts?|press|media|insights?|research|reports?|stories|"
     r"team|people|staff|agents?|careers?|jobs|about|contact|privacy|terms|search)(/|$)", re.I)
@@ -343,10 +344,17 @@ MAX_SITEMAP_CHILDREN = 12
 TILE_DEG = 0.03
 
 
-def is_listing_page(url: str) -> bool:
+def is_listing_page(url: str, src: dict | None = None) -> bool:
     path = url.split("?")[0]
-    if EDITORIAL_RE.search(path) or NOT_A_PAGE_RE.search(path):
+    if EDITORIAL_RE.search(path) or _DATED_PATH.search(path) or NOT_A_PAGE_RE.search(path):
         return False
+    # A source may scope its OWN inventory path. This is config, not a per-site parser:
+    # the generic INVENTORY_RE is a heuristic, and on a site whose sitemap also carries
+    # 1,373 residential pages (durst) or 388 investment-sale writeups (terracrg) a
+    # heuristic is not enough. One regex in sources.yml beats a scraper.
+    inc = (src or {}).get("include")
+    if inc:
+        return bool(re.search(inc, path, re.I))
     return bool(INVENTORY_RE.search(url))
 
 
@@ -717,7 +725,7 @@ def crawl_source(src: dict, metro: str, limit: int = 100) -> list[dict]:
                 return out                      # the rung worked — do not descend
             log.info("%s: wp-json returned nothing usable, descending the ladder", src["key"])
 
-    urls = [u for u in sitemap_urls(src["url"], src) if is_listing_page(u)]
+    urls = [u for u in sitemap_urls(src["url"], src) if is_listing_page(u, src)]
     urls = urls[:limit] or [src["url"]]
 
     for url in urls:

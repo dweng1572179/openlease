@@ -59,20 +59,15 @@ nyc:
   # rules (no iframe, no blacklisted vendor, no auth wall), and we refuse it anyway:
   # crawling an aggregator IS the CoStar v. CREXi fact pattern, and having declined
   # LoopLink for that exact reason, taking SquareFoot would be incoherent.
-  - key: optimal_spaces
-    name: Optimal Spaces
-    url: https://www.optimalspaces.com/sitemap.xml
-    rung: html
-    tier: default
+  # optimal_spaces: PARKED. 2,437 detail URLs and REAL RENTS, but no reachable sitemap from
+  # the root, and every page also renders 40+ OTHER buildings under "Nearby Spaces" — it
+  # would poison the index without a scoped parser. The biggest single miss on the list.
     # 2,437 detail URLs. The biggest source on the list by far — and the one most likely to
     # poison the index: every page ALSO renders 40+ OTHER buildings under "Nearby Spaces".
     # Watch its yield in the corpus sweep before trusting it.
-  - key: greiner_maltz
-    name: Greiner-Maltz Real Estate
-    url: https://www.greinermaltz.com/property-search/
-    rung: html
-    tier: default
-    # Queens/Brooklyn/Bronx/LIC industrial.
+  # greiner_maltz: PARKED. No sitemap; its inventory is a keyless JSON API
+  # (/api/properties.ashx) behind an empty <div id="app">. Worth ~316 industrial listings
+  # with sizes, but it needs a generic `json` rung the ladder does not have yet.
   - key: slgreen
     name: SL Green Realty
     url: https://slgreen.com/properties/
@@ -91,18 +86,21 @@ nyc:
     # Worth more than its count.
   - key: terracrg
     name: TerraCRG
-    url: https://www.terracrg.com/listings/for-lease/
+    url: https://www.terracrg.com
     rung: html
+    include: /listings/for-lease/
     tier: default
   - key: sinvin
     name: Sinvin Real Estate
-    url: https://sinvin.com/listings/
+    url: https://sinvin.com
     rung: html
+    include: /listings/[a-z0-9-]+
     tier: default
   - key: durst
     name: The Durst Organization
-    url: https://www.durst.org/availabilities/
+    url: https://www.durst.org/availabilities
     rung: html
+    include: /(availabilit|properties/)
     tier: default
   - key: rudin
     name: Rudin Management
@@ -111,18 +109,21 @@ nyc:
     tier: default
   - key: esrt
     name: Empire State Realty Trust
-    url: https://www.esrtreit.com/properties
+    url: https://www.esrtreit.com
     rung: html
+    include: /propert
     tier: default
   - key: kalmon_dolgin
     name: Kalmon Dolgin Affiliates
-    url: https://www.kalmondolgin.com/properties/
+    url: https://www.kalmondolgin.com
     rung: html
+    include: /propert
     tier: default
   - key: katz_nyc
     name: Katz & Associates
-    url: https://katzretail.com/listings
+    url: https://katzretail.com
     rung: html
+    include: /listing
     tier: default
   - key: besen
     name: Besen Partners
