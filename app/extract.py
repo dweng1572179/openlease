@@ -584,6 +584,17 @@ def from_html_facts(html: str, url: str, src: dict, metro: str) -> dict | None:
         # these sites put it ("/listings/1234-w-fulton-market/").
         slug = re.sub(r"[/?#].*$", "", url.rstrip("/").rsplit("/", 1)[-1])
         cand = slug.replace("-", " ").strip()
+        # A slug is lowercase ("2235-sepulveda"), and an address is a fact we show a broker.
+        # Title-case it — but leave a directional prefix alone ("nw", "se") rather than
+        # writing "Nw 2nd Ave".
+        def _cap(w: str) -> str:
+            if w.lower() in ("nw", "ne", "sw", "se"):
+                return w.upper()
+            if w[:1].isdigit():
+                return w.lower()          # str.title() turns "2nd" into "2Nd"
+            return w.title()
+
+        cand = " ".join(_cap(w) for w in cand.split())
         addr = cand if _ADDR_LIKE.match(cand) else None
     if not addr:
         return None
