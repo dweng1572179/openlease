@@ -26,6 +26,18 @@
       <button class="rounded bg-sky-600 px-4 py-2 text-sm font-medium text-white">Search</button>
       <span id="spin" class="htmx-indicator text-xs text-slate-400">…</span>
     </form>
+    {# "Recent" + "New chat" — /api/sessions has existed since Task 5 with no UI on it.
+       A follow-up refines the PRIOR turn, so being able to pick up an old thread (or
+       deliberately start a clean one) is the difference between a chat and a search box. #}
+    <div class="mb-2 flex items-center gap-2 text-xs">
+      <button type="button" id="new_chat"
+              class="rounded border px-2 py-1 text-slate-600 hover:border-sky-400">New chat</button>
+      <button type="button" id="recent_btn"
+              class="rounded border px-2 py-1 text-slate-600 hover:border-sky-400">Recent</button>
+      <span id="thread" class="text-slate-400"></span>
+    </div>
+    <div id="recent" class="mb-2 hidden max-h-40 overflow-y-auto rounded border bg-white text-xs"></div>
+
     <div id="results" class="overflow-y-auto flex-1 pr-1">
       <p class="text-sm text-slate-500">Describe the space you need — plain English.</p>
     </div>
@@ -140,5 +152,55 @@
   document.getElementById('saved_chk').onchange = (e) => {
     document.getElementById('saved_only').value = e.target.checked ? '1' : '';
   };
+
+  // --- Recent threads / New chat.
+  const thread = document.getElementById('thread');
+  const recent = document.getElementById('recent');
+
+  document.getElementById('new_chat').onclick = () => {
+    document.getElementById('session_id').value = '';
+    document.getElementById('prior_state').value = '';
+    document.querySelector('[name=message]').value = '';
+    thread.textContent = '';
+    recent.classList.add('hidden');
+    document.querySelector('[name=message]').focus();
+  };
+
+  document.getElementById('recent_btn').onclick = async () => {
+    if (!recent.classList.contains('hidden')) { recent.classList.add('hidden'); return; }
+    const r = await fetch('/api/sessions');
+    const {sessions} = await r.json();
+    if (!sessions.length) {
+      recent.innerHTML = '<p class="p-2 text-slate-400">No searches yet.</p>';
+    } else {
+      recent.innerHTML = sessions.map(s =>
+        `<button type="button" data-id="${s.id}" data-metro="${s.metro}"
+                 class="block w-full truncate px-2 py-1.5 text-left hover:bg-slate-50">
+           <span class="text-slate-400">${s.metro}</span> ${s.title || '(untitled)'}
+           <span class="text-slate-300">· ${s.turns} turn${s.turns === 1 ? '' : 's'}</span>
+         </button>`).join('');
+    }
+    recent.classList.remove('hidden');
+  };
+
+  // Resume a thread: replay its last turn's mustHaves as priorState, so the next message
+  // REFINES it instead of starting over — which is the whole point of a thread.
+  recent.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-id]');
+    if (!btn) return;
+    const id = btn.dataset.id;
+    const r = await fetch('/api/sessions/' + id);
+    const {turns} = await r.json();
+    if (!turns.length) return;
+    const last = turns[turns.length - 1];
+    document.getElementById('session_id').value = id;
+    document.getElementById('prior_state').value = JSON.stringify(last.mustHaves || {});
+    document.querySelector('[name=metro]').value = btn.dataset.metro;
+    document.querySelector('[name=message]').value = '';
+    document.querySelector('[name=message]').placeholder = 'refine: "' + last.message + '"';
+    thread.textContent = turns.length + ' turn' + (turns.length === 1 ? '' : 's') + ' in this thread';
+    recent.classList.add('hidden');
+    document.querySelector('[name=message]').focus();
+  });
 </script>
 {% endblock %}

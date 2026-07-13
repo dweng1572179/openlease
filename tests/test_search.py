@@ -255,3 +255,31 @@ def test_address_lookup_never_guesses(client, monkeypatch):
     body = client.post("/api/geocode",
                        json={"address": "350 5th Ave", "metro": "nyc"}).json()
     assert body["lat"] == 40.7484 and body["lng"] == -73.9857
+
+
+def test_recent_threads_are_listed_and_resumable(client):
+    """SpaceFinder's "Recent" + "New chat". /api/sessions has existed since Task 5 with no
+    UI on it. A follow-up REFINES the prior turn, so resuming an old thread has to replay
+    that turn's mustHaves as priorState — otherwise "Recent" is just a list of strings."""
+    r1 = client.post("/api/search", json={"message": "retail in wynwood 1500 sf",
+                                          "metro": "mia"}).json()
+    sid = r1["sessionId"]
+    client.post("/api/search", json={"message": "make it bigger — at least 5000 sf",
+                                     "metro": "mia", "sessionId": sid,
+                                     "priorState": r1["query"]["mustHaves"]})
+
+    sessions = client.get("/api/sessions").json()["sessions"]
+    me = next(s for s in sessions if s["id"] == sid)
+    assert me["turns"] == 2 and me["metro"] == "mia"
+    assert me["title"]                                   # something to click on
+
+    # resuming hands back the last turn's mustHaves — that IS the refinement state
+    turns = client.get(f"/api/sessions/{sid}").json()["turns"]
+    assert turns[-1]["mustHaves"]["minSizeSf"] == 5000
+    assert turns[-1]["mustHaves"]["propertyTypes"] == ["retail"]   # carried through the thread
+
+
+def test_the_home_page_has_the_recent_and_new_chat_controls(client):
+    html = client.get("/").text
+    assert 'id="new_chat"' in html and 'id="recent_btn"' in html
+    assert 'id="draw"' in html and 'id="addr"' in html and 'id="saved_chk"' in html
