@@ -69,3 +69,21 @@ def test_upsert_and_api_shape():
     api = to_api(db.get_listing(rid))
     assert api["photos"] == broker_pics
     assert api["scoreBreakdown"]["grocery"] == 3.0
+
+
+def test_we_only_ship_metros_that_have_supply():
+    """Chicago is fully built and fully tested — Cook County parcels, CTA rail, bbox,
+    scoring — but every Chicago brokerage we probed (the four in sources.yml plus a dozen
+    more) puts its inventory behind a JavaScript search app rather than a feed or a
+    sitemap, and we do not write per-site scrapers. A market with nothing in it looks
+    broken, so it is not in the switcher.
+
+    The CODE still supports it: parcel_chicago, rail/chi.json and the bbox all work, and a
+    Chicago CSV imports fine. Flip `shipped: true` in metros.yml the moment a Chicago
+    source publishes something the generic ladder can read."""
+    from app.models import METRO_KEYS, METROS, SHIPPED_METROS
+    assert METRO_KEYS == ("nyc", "mia", "la", "chi")     # what the code supports
+    assert SHIPPED_METROS == ("nyc", "mia", "la")        # what the switcher offers
+    assert METROS["chi"]["shipped"] is False
+    # ...and Chicago is still fully wired, not half-deleted
+    assert METROS["chi"]["bbox"] and METROS["chi"]["airports"]

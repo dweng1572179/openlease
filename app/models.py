@@ -22,7 +22,18 @@ from pydantic.alias_generators import to_camel
 METROS: dict[str, dict] = yaml.safe_load(
     (Path(__file__).parent / "data" / "metros.yml").read_text()
 )
-METRO_KEYS = tuple(METROS)  # ("nyc", "mia", "la", "chi")
+METRO_KEYS = tuple(METROS)  # every metro the CODE supports: nyc, mia, la, chi
+
+# The metros we actually SHIP in the switcher. A market with no inventory in it is worse
+# than no market at all — it looks broken.
+#
+# Chicago is fully built (Cook County parcels, CTA rail, bbox, scoring) and it is fully
+# tested, but it has NO crawlable broker supply: every Chicago brokerage we could find —
+# the four in sources.yml plus a dozen more we probed — puts its inventory behind a
+# JavaScript search app rather than in a sitemap or a feed, and we do not write per-site
+# scrapers. Chicago works today via CSV import, and the moment a Chicago source publishes a
+# feed or sitemapped listing pages, add it to sources.yml and set `shipped: true` here.
+SHIPPED_METROS = tuple(k for k, m in METROS.items() if m.get("shipped", True))
 
 
 class Listing(BaseModel):

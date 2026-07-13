@@ -269,3 +269,11 @@ def test_the_listing_page_shows_the_evidence_behind_the_scores(monkeypatch):
         assert "34 St-Herald Sq" in r.text and "210m" in r.text    # the stations behind it
         assert "JFK" in r.text and "31 min" in r.text              # airport drive times
         assert "no traffic" in r.text.lower()   # OSRM is free-flow — say so, don't imply live
+
+
+def test_the_switcher_does_not_offer_an_empty_market():
+    with TestClient(app, follow_redirects=False) as c:
+        c.post("/login", data={"password": "test-pw"})
+        html = c.get("/").text
+        assert 'value="nyc"' in html and 'value="mia"' in html and 'value="la"' in html
+        assert 'value="chi"' not in html, "Chicago has no crawlable supply — don't offer it"

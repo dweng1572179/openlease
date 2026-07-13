@@ -90,9 +90,13 @@ def spend_ctx() -> dict:
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request, _=Depends(require_auth)):
-    from .models import METROS
+    from .models import METROS, SHIPPED_METROS
     return templates.TemplateResponse(
-        request, "home.html", {"metro": "nyc", "metros": METROS, **spend_ctx()}
+        request, "home.html",
+        # only the metros we actually ship — a switcher entry with no inventory
+        # behind it looks like a broken product (see models.SHIPPED_METROS)
+        {"metro": "nyc", "metros": {k: METROS[k] for k in SHIPPED_METROS},
+         **spend_ctx()}
     )
 
 

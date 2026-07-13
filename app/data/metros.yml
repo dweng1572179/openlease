@@ -45,6 +45,13 @@ la:
   boroughs: [Downtown, Hollywood, Westside, San Fernando Valley, South Bay]
 chi:
   name: Chicago
+  # NOT shipped in the metro switcher — see models.SHIPPED_METROS. Chicago is fully built
+  # and fully tested (Cook County parcels, CTA rail, bbox, scoring), but it has no crawlable
+  # broker supply: every Chicago brokerage we probed puts its inventory behind a JavaScript
+  # search app rather than a feed or a sitemap, and we do not write per-site scrapers. A
+  # market with nothing in it looks broken. It works today via CSV import; flip this to true
+  # the moment a Chicago source publishes something the generic ladder can read.
+  shipped: false
   bbox: [41.469, -88.264, 42.154, -87.524]
   center: [41.8781, -87.6298]
   airports:
