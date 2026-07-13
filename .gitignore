@@ -12,3 +12,9 @@ app/data/elements.db
 # never commit a real env; .env alone does not match .env.bak/.env.local
 .env.*
 !.env.example
+
+# generated corpus exports — regenerable via scripts/export.py, never commit the data
+export/*.gz
+export/*.db
+export/*.csv
+export/*.jsonl
