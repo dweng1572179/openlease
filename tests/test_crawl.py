@@ -845,3 +845,19 @@ def test_the_city_and_state_survive_the_merge_into_the_feed_and_jsonld_rungs():
     from app.db import _LISTING_COLS
     assert "geo_hint" in crawl._FACT_KEYS and "geo_state" in crawl._FACT_KEYS
     assert "geo_hint" not in _LISTING_COLS and "geo_state" not in _LISTING_COLS
+
+
+def test_a_section_scoped_source_does_not_pull_the_whole_firms_national_sitemap(monkeypatch):
+    """M4. A sitemap lives at the DOMAIN root, so a source scoped to a section
+    (avisonyoung.us/web/los-angeles/properties-for-lease) pulled Avison Young's NATIONAL
+    inventory — every market they operate in. Correctness then rested entirely on the
+    out-of-market guard catching it afterwards."""
+    sm = ("<urlset>"
+          "<url><loc>https://ay.test/web/los-angeles/properties/1</loc></url>"
+          "<url><loc>https://ay.test/web/chicago/properties/2</loc></url>"
+          "<url><loc>https://ay.test/web/houston/properties/3</loc></url>"
+          "</urlset>")
+    monkeypatch.setattr(crawl, "fetch", lambda url, src: sm)
+    urls = crawl.sitemap_urls("https://ay.test/web/los-angeles/properties-for-lease",
+                              {"key": "avison_la"})
+    assert urls == ["https://ay.test/web/los-angeles/properties/1"]

@@ -347,6 +347,15 @@ def sitemap_urls(base: str, src: dict) -> list[str]:
         return []
 
     locs = _LOC.findall(body)
+    # A sitemap lives at the DOMAIN root, so a source scoped to a section of a site
+    # (avisonyoung.us/web/los-angeles/properties-for-lease) pulls that firm's NATIONAL
+    # inventory. Keep only what sits under the source's own path — the rest is another
+    # market's, and correctness would otherwise rest entirely on the out-of-market guard.
+    scope = urlparse(base).path.rstrip("/")
+    if scope and scope not in ("", "/"):
+        scoped = [u for u in locs if urlparse(u).path.startswith(scope) or u.endswith(".xml")]
+        if scoped:
+            locs = scoped
     children = [u for u in locs if u.endswith(".xml")]
     if children:
         out = [u for u in locs if not u.endswith(".xml")]
@@ -640,8 +649,14 @@ def run(metro: str | None = None, limit: int = 100, enrich: bool = False) -> dic
                 for rec in recs:
                     if not rec.get("lat"):
                         stats["no_pin"] += 1    # no point = no map pin, no score; still stored
-                    save_listing(rec)
-                    stats["saved"] += 1
+                    try:
+                        save_listing(rec)
+                        stats["saved"] += 1
+                    except Exception as e:  # noqa: BLE001 — one bad row must not kill the run
+                        # It used to count every attempt as a save, so a run that stored
+                        # nothing still reported a full tally.
+                        log.warning("could not save %r (%s): %s",
+                                    rec.get("source_url"), type(e).__name__, e)
                 stats["per_source"][src["key"]] = {
                     "rung": src.get("rung"), "listings": len(recs),
                 }
