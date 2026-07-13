@@ -25,6 +25,8 @@ import logging
 
 import httpx
 
+from urllib.parse import quote_plus
+
 from ..cache import cached
 
 log = logging.getLogger("openlease")
@@ -77,6 +79,13 @@ def storefronts(limit: int = 50_000, vacant_only: bool = True) -> list[dict]:
     out = []
     for r in rows:
         bbl = r.get("bbl")
+        # `:id` is Socrata's stable per-ROW key and is what we ASK for. But a response
+        # that does not carry one (an older capture, a changed $select) must not silently
+        # produce "?$where=:id='None'" — a URL that points at nothing and that every row
+        # would then share, collapsing the whole import back into one listing. Fall back to
+        # the tax lot plus the street address, which is the next most specific thing the
+        # city gives us.
+        row_id = r.get(":id")
         addr = r.get("property_street_address_or") or (
             f"{r.get('property_number', '')} {r.get('property_street', '')}".strip())
         lat, lng = r.get("latitude"), r.get("longitude")
@@ -86,8 +95,11 @@ def storefronts(limit: int = 50_000, vacant_only: bool = True) -> list[dict]:
             "source": "nyc_storefront",
             # Keyed on the ROW, not the BBL: six vacant storefronts in one building are six
             # storefronts, and upserting them onto one tax-lot URL threw five of them away.
-            "source_url": (f"https://data.cityofnewyork.us/resource/92iy-9c3n.json"
-                           f"?$where=:id='{r.get(':id')}'"),
+            "source_url": (
+                f"https://data.cityofnewyork.us/resource/92iy-9c3n.json?$where=:id='{row_id}'"
+                if row_id else
+                f"https://data.cityofnewyork.us/resource/92iy-9c3n.json"
+                f"?bbl={bbl}&address={quote_plus(addr)}"),
             "metro": "nyc",
             "status": "available",
             "address": addr,

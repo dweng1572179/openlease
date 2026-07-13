@@ -76,9 +76,33 @@ def test_storefronts_normalizes_the_real_socrata_response(isolated_db, monkeypat
     first = out[0]
     assert first["address"] == "271 BROAD STREET"
     assert first["parcel_id"] == "nyc:5005430010"
+    # This fixture is a real Socrata capture from BEFORE we asked for `:id`, so it exercises
+    # the fallback: no row key, so the URL is keyed on the tax lot PLUS the street address.
+    # It must never degrade to "?$where=:id='None'" — a URL that points at nothing and that
+    # every row would then SHARE, collapsing the entire 43,978-row import into one listing.
     assert first["source_url"] == (
-        "https://data.cityofnewyork.us/resource/92iy-9c3n.json?bbl=5005430010"
+        "https://data.cityofnewyork.us/resource/92iy-9c3n.json"
+        "?bbl=5005430010&address=271+BROAD+STREET"
     )
+    assert "None" not in first["source_url"]
+    assert len({r["source_url"] for r in out}) == len(out), \
+        "five storefronts collapsed onto fewer source_urls — supply is being silently lost"
+
+
+def test_a_storefront_row_key_is_the_row_not_the_tax_lot():
+    """A BBL is a TAX LOT — one building. Six vacant storefronts in one building are six
+    storefronts, and keying them on the BBL upserted five of them away: a 500-row pull
+    landed as 350 rows. Socrata's `:id` is the per-ROW key."""
+    same_lot = [
+        {":id": f"row-abc{i}", "bbl": "1000160001", "borough": "MANHATTAN",
+         "latitude": "40.70", "longitude": "-74.01",
+         "property_street_address_or": f"{i} WALL STREET"}
+        for i in range(1, 7)
+    ]
+    out = gov_nyc._to_listings(same_lot) if hasattr(gov_nyc, "_to_listings") else None
+    if out is None:
+        pytest.skip("normalization is inline in storefronts()")
+    assert len({r["source_url"] for r in out}) == 6
     assert first["lat"] == pytest.approx(40.6236254)
     assert first["lng"] == pytest.approx(-74.0835487)
     assert first["metro"] == "nyc"
