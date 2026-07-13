@@ -6,6 +6,12 @@ listings on a map, each enriched with free public data and conversationally quer
 
 Three markets: **New York, Miami, Los Angeles**.
 
+A real crawl over `app/data/sources.yml` — no API key, one request every 3–5 seconds — produces
+about **1,500 listings**: ~1,070 in New York, ~415 in Los Angeles, ~30 in Miami. The lopsidedness
+is honest and it has two causes, both explained below: NYC is the only one of the three whose
+*government* publishes a storefront-vacancy feed, and several Miami brokers serve their inventory
+only through CoStar's LoopLink widget, which this crawler refuses to touch.
+
 Chicago is built — Cook County parcels, CTA rail, scoring, the lot — and it isn't shipped,
 because it has no supply. Every Chicago brokerage we could find puts its inventory behind a
 JavaScript search app instead of a feed or a sitemap, and OpenLease doesn't write per-site
