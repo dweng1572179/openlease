@@ -950,3 +950,40 @@ def test_the_configured_state_passes_untouched():
     d = {"address": "450 Park Ave", "geo_state": "ny", "metro": "nyc"}
     assert crawl._out_of_market(d, "nyc") is False
     assert d["metro"] == "nyc"
+
+
+def test_the_feed_rung_reads_every_page_not_just_the_first(monkeypatch):
+    """WordPress caps per_page at 100 and says NOTHING about the rest — a feed of 833
+    listings hands back 100 and stays silent about the other 733 unless you ask for
+    &page=2. We never asked. RIPCO's Miami-Dade inventory lives past page 1, which is why
+    routing Florida listings to Miami surfaced only Panama City, Tampa and Sarasota: those
+    were the Florida rows that happened to fall in the first 100."""
+    import json
+    pages = {
+        "https://x.example.com/feed": [{"id": i} for i in range(100)],
+        "https://x.example.com/feed&page=2": [{"id": i} for i in range(100, 200)],
+        "https://x.example.com/feed&page=3": [{"id": i} for i in range(200, 240)],  # short = last
+    }
+    monkeypatch.setattr(crawl, "fetch",
+                        lambda url, src: json.dumps(pages[url]) if url in pages else None)
+    src = {"key": "x", "feed": "https://x.example.com/feed"}
+    items = crawl._feed_items(src, limit=500)
+    assert len(items) == 240, f"read only {len(items)} of 240 — pagination stopped early"
+    assert items[-1]["id"] == 239
+
+
+def test_the_feed_rung_stops_at_the_limit():
+    """...but it does not walk 833 listings to satisfy a limit of 10."""
+    import json
+    fetched = []
+
+    def fake_fetch(url, src):
+        fetched.append(url)
+        return json.dumps([{"id": i} for i in range(100)])
+
+    import pytest as _p
+    with _p.MonkeyPatch().context() as m:
+        m.setattr(crawl, "fetch", fake_fetch)
+        items = crawl._feed_items({"key": "x", "feed": "https://x.example.com/feed"}, limit=50)
+    assert len(fetched) == 1, "walked past the limit"
+    assert len(items) == 100

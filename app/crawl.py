@@ -599,18 +599,50 @@ def _fill_facts_from_detail_pages(recs: list[dict], src: dict) -> None:
             d["_drop"] = True
 
 
+MAX_FEED_PAGES = 12          # 12 x per_page=100 = 1,200 listings. RIPCO's whole book is 833.
+
+
+def _feed_items(src: dict, limit: int) -> list[dict]:
+    """Every page of a WordPress REST feed, not just the first.
+
+    The feed URL says `per_page=100`, and WP caps it there — so a feed of 833 listings hands
+    back 100 and says nothing about the other 733 unless you ask for `&page=2`. We never
+    asked. RIPCO's Miami-Dade inventory lives past page 1, which is why re-routing Florida
+    listings to Miami (the fix that was supposed to give Miami its retail book) surfaced only
+    Panama City, Tampa and Sarasota: those happened to be the Florida rows in the first 100.
+
+    WP answers a page past the end with a 400 and code `rest_post_invalid_page_number`, which
+    `fetch` turns into None — so "no body" is the natural stop, alongside a short page.
+    """
+    import json as _json
+    items: list[dict] = []
+    for page in range(1, MAX_FEED_PAGES + 1):
+        url = src["feed"] if page == 1 else f"{src['feed']}&page={page}"
+        body = fetch(url, src)
+        if not body:
+            break
+        try:
+            batch = _json.loads(body)
+        except _json.JSONDecodeError:
+            log.warning("%s: feed page %d was not JSON — stopping", src["key"], page)
+            break
+        if not isinstance(batch, list) or not batch:
+            break
+        items.extend(batch)
+        log.info("%s: feed page %d -> %d items (%d total)",
+                 src["key"], page, len(batch), len(items))
+        if len(items) >= limit or len(batch) < 100:
+            break                                    # a short page is the last page
+    return items
+
+
 def crawl_source(src: dict, metro: str, limit: int = 100) -> list[dict]:
     """Descend the ladder, stopping at the highest rung that produces listings."""
     out: list[dict] = []
 
     if src.get("rung") == "feed_wp" and src.get("feed"):
-        body = fetch(src["feed"], src)
-        if body:
-            import json as _json
-            try:
-                items = _json.loads(body)
-            except _json.JSONDecodeError:
-                items = []
+        items = _feed_items(src, limit)
+        if items:
             for item in items[:limit]:
                 d = extract.from_wp_json(item, src, metro)
                 if d and not _out_of_market(d, metro):   # check BEFORE we geocode
