@@ -335,6 +335,79 @@ def _headline(html: str) -> str | None:
     return None
 
 
+# A broker page is FULL of numbers that are not this listing's. Metro Manhattan's pages
+# quote the Midtown market ("asking rents held flat at $78.23/SF — Cushman & Wakefield"),
+# list a size-filter dropdown (1,000 / 1,999 / 4,999 / 9,999), and give the whole building's
+# footprint (807,000 SF). Taking min() of everything that looked like a size or a rent
+# INVENTED facts: every Metro Manhattan listing came out at "$78/SF/yr", which is a market
+# statistic, not an ask.
+#
+# So: anchor on the page's own LABEL. "Asking Rent: $78" is this listing's rent; a number
+# floating in a paragraph about the market is not. If nothing is labelled, we do not guess —
+# a wrong rent is worse than no rent, and a search that filters on a fabricated number is
+# worse than one that filters on nothing.
+_RENT_LABEL = re.compile(
+    r"(?:asking\s+rent|asking\s+price|rent|rate|price|ask)\s*[:\-–]?\s*"
+    r"\$\s?([\d][\d,]*\.?\d*)\s*(?:/|\s+per\s+)?\s*"
+    r"(sf|sq\.?\s?ft|square\s+foot|mo\b|month)?\s*/?\s*(yr|year|mo\b|month)?", re.I)
+# "(?<!filter by )" — "Filter by size: 1,000 SF" is a DROPDOWN, not this listing's size.
+_SIZE_LABEL = re.compile(
+    r"(?<!filter by )(?:size|space available|availability|sf\s+available|square\s+footage"
+    r"|divisible)\s*[:\-–]?\s*([\d][\d,]{1,8})\s*(?:\+/-\s*)?"
+    r"(?:SF\b|sq\.?\s?ft|square\s+feet)", re.I)
+
+
+def _size_of(text: str) -> int | None:
+    """This listing's size. Prefers a LABELLED value ("Size: 3,305 SF"); otherwise the most
+    REPEATED one — a listing page says its own size several times, while a filter dropdown
+    says each of its options exactly once."""
+    labelled = [_num(s) for s in _SIZE_LABEL.findall(text)]
+    labelled = [s for s in labelled if _MIN_SF <= s <= _MAX_SF]
+    if labelled:
+        return int(labelled[0])
+
+    from collections import Counter
+    found = [_num(s) for s in _SIZE.findall(text)]
+    found = [s for s in found if _MIN_SF <= s <= _MAX_SF]
+    if not found:
+        return None
+    counts = Counter(found)
+    top, n = counts.most_common(1)[0]
+    if n < 2 and len(counts) > 3:
+        return None          # many one-off numbers and nothing repeated: a dropdown, not a listing
+    return int(top)
+
+
+def _rent_of(text: str) -> tuple[float, str] | None:
+    """This listing's ask, and the unit it is quoted in. LABELLED ONLY — see the note above.
+    LA and industrial quote $/SF/MONTH; everyone else quotes $/SF/YEAR; some quote a gross
+    monthly figure. The page says which."""
+    for m in _RENT_LABEL.finditer(text):
+        val = _num(m.group(1))
+        per_sf = bool(m.group(2) and not re.fullmatch(r"mo\b|month", m.group(2), re.I))
+        period = (m.group(3) or (m.group(2) if not per_sf else "") or "").lower()
+        monthly = period.startswith("mo") or period.startswith("month")
+        if per_sf:
+            if monthly and _MIN_SF_MO <= val <= _MAX_SF_MO:
+                return val, "sf_mo"
+            if not monthly and _MIN_SF_YR <= val <= _MAX_SF_YR:
+                return val, "sf_yr"
+        elif monthly and val >= 500:            # a gross monthly rent
+            return val, "mo"
+
+    # No label. Accept an unlabelled rent ONLY when the page quotes exactly one — then it is
+    # unambiguous. Metro Manhattan's pages quote four ($78.23 and $77.55 market averages,
+    # $85.28, $320) and none of them is the listing's ask; a page with a single $/SF figure
+    # is telling you the ask. More than one, and we do not guess.
+    mo = [v for v in (_num(r) for r in _RENT_SF_MO.findall(text)) if _MIN_SF_MO <= v <= _MAX_SF_MO]
+    yr = [v for v in (_num(r) for r in _RENT_SF.findall(text)) if _MIN_SF_YR <= v <= _MAX_SF_YR]
+    if len(set(mo)) == 1:
+        return mo[0], "sf_mo"
+    if not mo and len(set(yr)) == 1:
+        return yr[0], "sf_yr"
+    return None
+
+
 def from_html_facts(html: str, url: str, src: dict, metro: str) -> dict | None:
     """Rung 3c. Facts (size, ask, type) out of the page's own text — keyless, generic.
 
@@ -364,31 +437,22 @@ def from_html_facts(html: str, url: str, src: dict, metro: str) -> dict | None:
         d["geo_hint"] = f"{addr}, {city[0]}, {city[1]}"
         d["geo_state"] = city[1].lower()      # lets _out_of_market reject it before geocoding
 
-    sizes = [_num(s) for s in _SIZE.findall(txt)]
-    sizes = [s for s in sizes if _MIN_SF <= s <= _MAX_SF]
-    if sizes:
-        d["size_sf"] = int(min(sizes))              # the smallest divisible unit on offer
-        if len(sizes) > 1:
-            d["divisible_min_sf"], d["divisible_max_sf"] = int(min(sizes)), int(max(sizes))
+    size = _size_of(txt)
+    if size:
+        d["size_sf"] = size
 
-    # A per-SF quote is monthly in LA/industrial and yearly elsewhere; the page says which.
-    mo = [_num(r) for r in _RENT_SF_MO.findall(txt)]
-    mo = [r for r in mo if _MIN_SF_MO <= r <= _MAX_SF_MO]
-    yr = [_num(r) for r in _RENT_SF.findall(txt)]
-    yr = [r for r in yr if _MIN_SF_YR <= r <= _MAX_SF_YR]
-    if mo:
-        d["asking_rent"], d["rent_unit"] = min(mo), "sf_mo"
-    elif yr:
-        d["asking_rent"], d["rent_unit"] = min(yr), "sf_yr"
-    else:
-        gross = [_num(r) for r in _RENT_MO.findall(txt)]
-        if gross:
-            d["asking_rent"], d["rent_unit"] = min(gross), "mo"
+    rent = _rent_of(txt)
+    if rent:
+        d["asking_rent"], d["rent_unit"] = rent
 
-    for t in _TYPES:
-        if re.search(r"\b" + t + r"\b", txt, re.I):
-            d["property_type"] = t
-            break
+    # The type is the one the page TALKS about, not the first one it happens to mention.
+    # Taking the first hit in _TYPES order typed every Metro Manhattan listing "retail" —
+    # their pages say "office" twenty times and "retail" twice, and "retail" is first in
+    # the tuple.
+    counts = {t: len(re.findall(r"\b" + t + r"\b", txt, re.I)) for t in _TYPES}
+    best = max(counts, key=lambda t: counts[t])
+    if counts[best]:
+        d["property_type"] = best
 
     if re.search(r"\bfor\s+sale\b", txt, re.I) and not d.get("asking_rent"):
         d["transaction_type"] = "sale"

@@ -4,7 +4,14 @@ An AI-native commercial-real-estate leasing search you host yourself. Describe t
 you need in plain English — *"retail in Wynwood ~1,500 SF under $8k/mo"* — and get matching
 listings on a map, each enriched with free public data and conversationally queryable.
 
-Four markets: **New York, Miami, Los Angeles, Chicago**.
+Three markets: **New York, Miami, Los Angeles**.
+
+Chicago is built — Cook County parcels, CTA rail, scoring, the lot — and it isn't shipped,
+because it has no supply. Every Chicago brokerage we could find puts its inventory behind a
+JavaScript search app instead of a feed or a sitemap, and OpenLease doesn't write per-site
+scrapers. A market with nothing in it looks broken, so it isn't in the switcher. Import a
+Chicago CSV and it works; find a Chicago source the generic ladder can read, add it to
+`app/data/sources.yml`, and flip `shipped: true` in `app/data/metros.yml`.
 
 ## It runs with no API keys at all
 

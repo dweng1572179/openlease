@@ -256,3 +256,47 @@ def test_the_city_comes_from_the_page_so_the_address_can_be_geocoded():
     # CRE boilerplate sits exactly where a city would
     assert extract._city_of("540 Rose Avenue NNN Venice, CA", "540 Rose Avenue") == ("Venice", "CA")
     assert extract._city_of("no city named anywhere", "1 Main St") is None
+
+
+# --- a broker page is full of numbers that are NOT this listing's ------------------------
+
+def test_a_market_statistic_never_becomes_an_asking_rent():
+    """THE fabrication bug. Metro Manhattan's listing pages quote the Midtown market in
+    their own copy — "asking rents held flat at $78.23/SF (Cushman & Wakefield, April
+    2026)" — and taking min() of everything that looked like a rent stamped EVERY Metro
+    Manhattan listing "$78/SF/yr". That is not an ask. It is a market average, presented to
+    a broker as this suite's rent, and it is exactly the kind of plausible-looking wrong
+    data this project refuses to ship. A wrong rent is worse than no rent: a search that
+    filters on a fabricated number is worse than one that filters on nothing."""
+    page = ("Midtown asking rents held flat at $78.23/SF (Cushman & Wakefield, April 2026), "
+            "with Class A at $85.28/SF and Class B at $77.55/SF. "
+            "3,305 SF available on the partial 29th floor. 3,305 SF. 3,305 SF.")
+    assert extract._rent_of(page) is None, "four market figures — we must not pick one"
+    assert extract._size_of(page) == 3305, "the size the page actually repeats"
+
+
+def test_a_labelled_rent_beats_a_market_number_on_the_same_page():
+    page = "Asking Rent: $62/SF/yr. Midtown averaged $78.23/SF last quarter."
+    assert extract._rent_of(page) == (62.0, "sf_yr")
+
+
+def test_one_unlabelled_rent_is_unambiguous_and_is_taken():
+    """A page that quotes exactly one $/SF figure is telling you the ask."""
+    assert extract._rent_of("1,500 SF of ground-floor retail. $95/SF/yr.") == (95.0, "sf_yr")
+
+
+def test_a_size_filter_dropdown_never_becomes_a_size():
+    """"Filter by size: 1,000 SF / 1,999 SF / 4,999 SF" is a form control. Each option
+    appears exactly once; a listing repeats its own size."""
+    assert extract._size_of("Filter by size: 1,000 SF 1,999 SF 4,999 SF 9,999 SF") is None
+
+
+def test_the_property_type_is_the_one_the_page_talks_about():
+    """Taking the first hit in _TYPES order typed every Metro Manhattan listing "retail" —
+    their pages say "office" twenty times and "retail" twice, and "retail" happens to come
+    first in the tuple."""
+    page = "Office space. Prime office tower. Office suite. Office. Nearby retail."
+    d = extract.from_html_facts(
+        "<html><h1>122 East 42nd Street</h1><p>Size: 825 SF. " + page + "</p></html>",
+        "https://x.test/listings/122-east-42nd", _SRC, "nyc")
+    assert d["property_type"] == "office"
