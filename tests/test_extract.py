@@ -607,3 +607,38 @@ def test_divisions_needs_at_least_two_units_and_its_own_header():
     assert extract._divisions("Proposed Divisions Retail A: 1,608 SF") is None
     # and figures with no header are not divisions at all
     assert extract._divisions("1,608 SF 2,450 SF 2,286 SF") is None
+
+
+def test_the_neighbourhood_is_not_the_suite():
+    """362 Van Brunt Street is a Red Hook storefront whose page sells the AREA around it:
+    "a rebuilt port, 28 acres of public open space, and more than 275,000 SF of new
+    development". The only other figure on the page is a LOT size — so once that was
+    correctly decoyed out, the district's development pipeline was the sole surviving
+    candidate, and a 275,000 SF SUITE went into the database."""
+    txt = ("362 Van Brunt Street. Key Details Gross Lot Sq. Ft. 1,050 SF. The waterfront is "
+           "being reborn with a rebuilt port, 28 acres of public open space, and more than "
+           "275,000 SF of new development.")
+    assert extract._size_of(txt) is None, "stored a whole district's pipeline as one suite"
+
+
+def test_the_area_guard_does_not_eat_real_listings():
+    """The markers are narrow ON PURPOSE. A real listing says "in the Design District" all
+    the time, and decoying on that would throw away good listings to catch a rare bad one."""
+    assert extract._size_of(
+        "A 2,400 SF ground-floor space in the Design District. 2,400 SF available.") == 2400
+    assert extract._size_of(
+        "Prime waterfront retail. Space Available: 3,000 SF") == 3000
+
+
+def test_a_building_is_never_one_of_its_own_units():
+    """90 Broad Street lists "Space A Ground Floor 700 SF, Space B Ground Floor 650 SF" and
+    then, still inside the divisions window, the 420,000 SF tower they sit in. The largest
+    "unit" came out as the whole building, and a 700 SF storefront was filed as 420,000."""
+    txt = ("90 Broad Street. Key Details Available Spaces 2 Asking Rent Upon Request "
+           "Available Spaces Space A Ground Floor 700 SF Frontage 25 FT Space B Ground "
+           "Floor 650 SF Frontage 27 FT Building Size: 420,000 SF")
+    assert extract._divisions(txt) == [650, 700]
+    d = extract.from_html_facts(
+        txt, "https://www.ripcony.com/property-listings/90-broad-street-new-york-ny/",
+        SRC, "nyc")
+    assert d["size_sf"] == 700 and d["total_building_sf"] == 420000

@@ -446,6 +446,28 @@ def _size_decoyed(text: str, at: int) -> bool:
     return bool(_SIZE_DECOY.search(text[max(0, at - _SIZE_DECOY_WINDOW):at]))
 
 
+# A square footage inside a sentence about the NEIGHBOURHOOD is not this space. 362 Van Brunt
+# Street is a Red Hook storefront whose page sells the area around it: "a rebuilt port, 28
+# acres of public open space, and more than 275,000 SF of..." — the only other figure on the
+# page is a LOT size, so once that was (correctly) decoyed out, the district's development
+# pipeline was the sole surviving candidate and a 275,000 SF SUITE went into the database.
+#
+# The markers are deliberately narrow. "District", "waterfront" and "neighborhood" are NOT
+# here: a real listing says "this 2,400 SF space in the Design District" all the time, and
+# decoying on those would throw away good listings to catch a rare bad one. Acreage and
+# public open space, in the same breath as a square footage, is area prose — a suite is not
+# measured in acres.
+_AREA_PROSE = re.compile(r"\bacres?\b|open\s+space|parkland|esplanade|public\s+plaza", re.I)
+_SENTENCE_BACK = 240
+
+
+def _in_area_prose(text: str, at: int) -> bool:
+    start = text.rfind(".", max(0, at - _SENTENCE_BACK), at) + 1
+    end = text.find(".", at)
+    end = end if 0 < end < at + 90 else at + 90
+    return bool(_AREA_PROSE.search(text[start:end]))
+
+
 # A broker page for a MULTI-TENANT BUILDING has no single "size", and Rexford's pages say so
 # in as many words:
 #     "Property Total SF: 125,514"        <- the BUILDING, not a suite
@@ -514,14 +536,21 @@ def _divisions(text: str) -> list[int] | None:
     Only figures INSIDE the divisions block count — the header tells us what these numbers
     are, which is exactly the knowledge _size_of lacks when it refuses to pick between four
     one-off candidates. Outside that block we go back to refusing.
+
+    The BUILDING is never one of its own units. 90 Broad Street lists "Space A Ground Floor
+    700 SF, Space B Ground Floor 650 SF" and then, still inside the window, the 420,000 SF
+    tower they sit in — so the largest "unit" came out as the whole building and a 700 SF
+    storefront was filed as a 420,000 SF one.
     """
     m = _DIVISIONS_HDR.search(text)
     if not m:
         return None
+    building = _building_sf(text)
     block = text[m.end():m.end() + _DIVISIONS_WINDOW]
     sizes = [_num(x.group(1)) for x in _SIZE.finditer(block)
              if not _size_decoyed(block, x.start())]
-    sizes = sorted({int(s) for s in sizes if _MIN_SF <= s <= _MAX_SF})
+    sizes = sorted({int(s) for s in sizes
+                    if _MIN_SF <= s <= _MAX_SF and s != building})
     return sizes if len(sizes) >= 2 else None
 
 
@@ -548,7 +577,7 @@ def _size_of(text: str) -> int | None:
     # standing, and a floorplate is not an availability either. When a page states no
     # leasable size, the honest answer is that we don't have one.
     found = [_num(m.group(1)) for m in _SIZE.finditer(text)
-             if not _size_decoyed(text, m.start())]
+             if not _size_decoyed(text, m.start()) and not _in_area_prose(text, m.start())]
     found = [s for s in found if _MIN_SF <= s <= _MAX_SF and s != building]
     if not found:
         return None
