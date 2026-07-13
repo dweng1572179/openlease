@@ -25,6 +25,16 @@ RADIUS_M = 2414  # Walk Score's outer bound (1.5 miles)
 
 log = logging.getLogger("openlease")
 
+# The client must NEVER give up on a query it told the server it could spend that long on.
+# The bbox query asks for 180s of server compute, and httpx was giving up at 150 — so the
+# DENSE tiles the tiling exists for (Manhattan is 3.3x the area of the per-listing circle the
+# code's own comment measures at ~43s) were aborted BY US, logged as "unreachable", and the
+# tile failed. The one query the design is built around was the one query that could not land.
+# Client budget = the server's own budget + room to stream a large response back.
+SERVER_BUDGET_S = 120           # a single 1.5-mile circle
+SERVER_BUDGET_BBOX_S = 180      # a padded ~3.3km tile: bigger area, more compute
+CLIENT_TIMEOUT_S = SERVER_BUDGET_BBOX_S + 60
+
 RETRY_STATUS = (406, 429, 504)   # public-mirror soft rate-limiting, not a bad request
 RETRIES = 4
 BACKOFF_BASE_S = 8.0
@@ -64,14 +74,14 @@ def _query(lat: float, lng: float) -> str:
     # moment of load — and did in fact 504 twice at [timeout:60]. This call is INGEST-TIME
     # ONLY and cached forever, so there is no cost to giving it room; there IS a cost to a
     # false "the mirror is down" failure on the densest, most information-rich addresses.
-    return f"[out:json][timeout:120];\n({chr(10).join(parts)}\n);\nout center tags;"
+    return f"[out:json][timeout:{SERVER_BUDGET_S}];\n({chr(10).join(parts)}\n);\nout center tags;"
 
 
 def _query_bbox(s: float, w: float, n: float, e: float) -> str:
     parts = [f'nwr({s},{w},{n},{e})[{key}~"^({"|".join(vals)})$"];'
              for _cat, (key, vals) in CATEGORIES.items()]
     parts.append(f"nwr({s},{w},{n},{e})[highway=bus_stop];")
-    return f"[out:json][timeout:180];\n({chr(10).join(parts)}\n);\nout center tags;"
+    return f"[out:json][timeout:{SERVER_BUDGET_BBOX_S}];\n({chr(10).join(parts)}\n);\nout center tags;"
 
 
 def pois_bbox(s: float, w: float, n: float, e: float) -> list[dict]:
@@ -131,7 +141,7 @@ def _run(q: str, key: dict, what: str) -> list[dict]:
                         mirror, data={"data": q},
                         headers={"User-Agent": settings.crawl_user_agent,
                                  "Accept": "application/json"},
-                        timeout=150.0,
+                        timeout=CLIENT_TIMEOUT_S,
                     )
                 except httpx.HTTPError as e:              # a timeout is a refusal too
                     log.warning("Overpass %s unreachable (%s) — trying the next mirror",

@@ -1025,3 +1025,39 @@ def test_the_range_retry_runs_inside_geocode_and_never_rewrites_the_address(monk
         f"the range was never retried — asked {asked}"
     assert d["lat"] == 34.0 and d["lng"] == -118.0
     assert d["address"] == "1160 1170 N Gilbert Street", "the crawler rewrote the address"
+
+
+def test_a_numbered_street_is_not_an_address_range():
+    """"1160 1170" is a range. "1321 5 Avenue" is 1321 FIFTH Avenue with its ordinal suffix
+    lost — collapsing it produced "1321 Avenue", a street with no name, and sent that to two
+    geocoders. A range spans the same magnitude and ascends."""
+    assert crawl._collapse_range("1160 1170 N Gilbert Street") == "1160 N Gilbert Street"
+    assert crawl._collapse_range("301 445 N Figueroa Street") == "301 N Figueroa Street"
+    assert crawl._collapse_range("1321 5 Avenue") is None
+    assert crawl._collapse_range("1200 3 Street") is None
+
+
+def test_an_unconfirmed_reroute_is_dropped_not_filed():
+    """We only believed this was Miami because its SLUG said "fl". The geocoder could not
+    confirm it, so the bbox check never runs — and RIPCO's Panama City and Tampa listings
+    would sit in Miami, unpinned, forever. Florida is 500 miles long: a state is not a metro."""
+    d = {"address": "2732 E 15th St", "geo_state": "fl", "metro": "nyc", "source": "ripco"}
+    assert crawl._out_of_market(d, "nyc") is False
+    assert d["metro"] == "mia" and d["_rerouted"] is True
+    assert crawl._place(d, "nyc") is False, "an unconfirmable re-route was filed anyway"
+
+
+def test_a_listing_in_its_own_metro_that_wont_geocode_is_still_kept():
+    """...but a listing that was NEVER re-routed keeps its address and its link, and simply
+    has no pin. That was always the honest behaviour and it stays."""
+    d = {"address": "121 Towne Street", "metro": "nyc", "source": "ripco"}
+    assert crawl._place(d, "nyc") is True
+    assert d["metro"] == "nyc"
+
+
+def test_the_building_size_survives_the_fact_merge():
+    """total_building_sf was extracted off the detail page and then thrown away at the merge
+    whitelist. A fact extracted and discarded is worse than one never extracted: the code
+    looks like it works."""
+    for k in ("total_building_sf", "divisible_min_sf", "divisible_max_sf"):
+        assert k in crawl._FACT_KEYS, f"{k} is dropped at the feed/JSON-LD merge"

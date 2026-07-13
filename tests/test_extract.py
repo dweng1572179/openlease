@@ -735,3 +735,80 @@ def test_a_feed_price_is_not_assumed_to_be_yearly():
          "link": "https://x.com/p/9", "acf": {"address": "9 Test Ave", "rent": "6500000"}},
         SRC, "nyc")
     assert not weird.get("asking_rent"), "a sale-sized number became an asking rent"
+
+
+# --- second adversarial audit: 10 more findings ------------------------------
+
+def test_a_sale_price_per_sf_labelled_as_such_is_not_a_rent():
+    """WestMac's spec sheet puts "For Sale" in the headline and the figure a hundred
+    characters later, so the 60-char decoy run-up never reached it. The LABEL beside the
+    figure is the tell, and it is unambiguous."""
+    txt = ("1025 Westwood Boulevard. For Sale. Building Size 18,500 SF | Lot Size 12,000 SF "
+           "| Year Built 1962 | Zoning C2-1VL | Parking 24 spaces | Price $14,995,000 | "
+           "Price Per Square Foot $810.54 / SF")
+    assert extract._rent_of(txt, "la", "office") is None, "a sale price/SF became a rent"
+
+
+def test_a_leased_page_whose_slug_is_clean_still_gets_caught():
+    """_headline splits "105 Miracle Mile – Leased" on the dash and hands back a clean
+    address, so by the time _clean runs the word "Leased" is gone — and a page whose URL
+    carries no marker sailed straight in. The page says it in its own <title>."""
+    html = ("<title>105 Miracle Mile &#8211; Leased | Terranova</title>"
+            "<h1>105 Miracle Mile &#8211; Leased</h1>"
+            "<p>Size: 2,400 SF. Asking Rent: $85/SF/YR.</p>")
+    assert extract.from_html_facts(
+        html, "https://terranovacorp.com/property/105-miracle-mile/", SRC, "mia") is None
+
+
+def test_a_whole_building_offered_for_lease_keeps_its_size():
+    """"For Lease: 25,000 SF industrial building" had its 25,000 SF read as THE BUILDING and
+    excluded — leaving size_sf empty and the listing invisible to every SF filter. A building
+    that is itself for lease IS the space."""
+    txt = ("1234 Warehouse Way. For Lease: 25,000 SF industrial building in Vernon. "
+           "Asking Rent: $1.50/SF/Mo.")
+    d = extract.from_html_facts(txt, "https://x.com/listings/1234-warehouse-way", SRC, "la")
+    assert d and d["size_sf"] == 25000, f"the leasable building lost its size: {d}"
+
+
+def test_a_listing_that_states_its_acreage_keeps_its_building_size():
+    """A real industrial listing says "situated on 2.5 acres, this property offers 5,000 SF
+    of warehouse space" — decoying on acreage alone deleted its size and then the listing."""
+    txt = ("1234 Warehouse Way. Situated on 2.5 acres, this industrial property offers "
+           "5,000 SF of warehouse space available for lease in Vernon, CA. 5,000 SF.")
+    d = extract.from_html_facts(txt, "https://x.com/listings/1234-warehouse", SRC, "la")
+    assert d and d["size_sf"] == 5000
+
+
+def test_the_neighbourhood_pipeline_is_still_refused():
+    """...but the guard that mattered still fires: what marks 362 Van Brunt's sentence as
+    being about the DISTRICT is public open space, not the acreage."""
+    txt = ("362 Van Brunt Street. Key Details Gross Lot Sq. Ft. 1,050 SF. Red Hook is being "
+           "remade: a rebuilt port, 28 acres of public open space, and more than 275,000 SF "
+           "of new commercial development is planned.")
+    assert extract._size_of(txt) is None
+    assert extract._building_sf(txt) is None, "a district's pipeline became the building"
+
+
+def test_a_single_tenant_listing_may_call_its_own_size_total():
+    """"Total", "min" and "max" were decoys — and they reject the ordinary labels a
+    single-tenant listing uses for its OWN size."""
+    assert extract._size_of("Total Size: 2,400 SF of ground floor retail.") == 2400
+    assert extract._size_of("Maximum contiguous: 12,000 SF available.") == 12000
+
+
+def test_miami_industrial_is_quoted_per_year_not_per_month():
+    """The monthly convention is LA's, not industrial's. A Miami-Dade warehouse asking
+    "$16.50/SF" means a YEAR; calling it sf_mo overstates the ask 12x."""
+    assert extract._unit_for(16.5, "", "mia", "industrial") == "sf_yr"
+    assert extract._unit_for(16.5, "", "nyc", "industrial") == "sf_yr"
+    assert extract._unit_for(1.95, "", "la", "industrial") == "sf_mo"   # LA still monthly
+
+
+def test_describe_says_the_building_size_and_the_divisible_range():
+    """Facts we store and never say are dead weight."""
+    d = extract.describe({"address": "1450 Brickell", "total_building_sf": 625800,
+                          "property_type": "office"})
+    assert "625,800 SF" in d
+    d = extract.describe({"address": "1150 NE 125th", "size_sf": 2769, "property_type": "retail",
+                          "divisible_min_sf": 1608, "divisible_max_sf": 2769})
+    assert "divisible 1,608-2,769 SF" in d

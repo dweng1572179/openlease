@@ -25,10 +25,18 @@
                     "${:,.0f}/mo".format(l.askingRent) if l.rentUnit == 'mo' else
                     "${:,.0f}/SF/yr".format(l.askingRent)) if l.askingRent else
                    ("${:,}".format(l.salePrice) if l.salePrice else None) %}
+      {# "Divisible" is the single most useful fact about a multi-tenant building — a tenant
+         who needs 1,600 SF cares that a 2,769 SF space divides down to it — and we were
+         storing it and rendering nothing. "Building" is, on a tower with no stated
+         availability, the ONLY size fact we have. #}
       <dl class="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
         {% for label, val in [
             ("Type", l.propertyType), ("Size", "{:,} SF".format(l.sizeSf) if l.sizeSf else None),
             ("Ask", ask),
+            ("Divisible", "{:,}-{:,} SF".format(l.divisibleMinSf, l.divisibleMaxSf)
+                if l.divisibleMinSf and l.divisibleMaxSf and l.divisibleMinSf != l.divisibleMaxSf
+                else None),
+            ("Building", "{:,} SF".format(l.totalBuildingSf) if l.totalBuildingSf else None),
             ("Lease type", l.leaseType), ("Floor", l.floor),
             ("Ceiling", "{} ft".format(l.ceilingHeightFt) if l.ceilingHeightFt else None),
             ("Available", l.availabilityDate), ("Walk Score", l.walkScore),

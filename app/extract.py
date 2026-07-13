@@ -392,6 +392,15 @@ def page_text(html: str) -> str:
     return re.sub(r"\s+", " ", unescape(t)).strip()
 
 
+def _raw_headline(html: str) -> str | None:
+    """The <h1>/<title> BEFORE _headline splits it — markers and all."""
+    for pat in (_H1, _OG_TITLE, _TITLE):
+        m = pat.search(html)
+        if m:
+            return unescape(re.sub(r"<[^>]+>", " ", m.group(1))).strip()
+    return None
+
+
 def _headline(html: str) -> str | None:
     for pat in (_H1, _OG_TITLE, _TITLE):
         m = pat.search(html)
@@ -439,7 +448,10 @@ _RENT_DECOY = re.compile(
     # and $810/SF is what the BUILDING costs to buy, divided by its area. Read as an asking
     # rent it becomes $810/SF/yr — roughly ten times Rodeo Drive, on a Westwood office block.
     # A $15,000,000 building was on the market as a rental at a price nobody has ever paid.
-    r"|for\s+sale|sale\s+price|asking\s+price|sold\s+for|purchase\s+price", re.I)
+    r"|for\s+sale|sale\s+price|asking\s+price|sold\s+for|purchase\s+price"
+    # ...and the label the spec sheet actually uses, which sits right next to the figure
+    # even when the words "For Sale" are a hundred characters away in the headline.
+    r"|price\s+per\s+square\s+f(?:oot|eet)|price\s+per\s+sf|price\s*/\s*sf|psf", re.I)
 _DECOY_WINDOW = 60          # chars of run-up to check for a decoy word
 
 
@@ -490,9 +502,13 @@ _SIZE_LABEL = re.compile(
 # CharLOTte; "site" inside webSITE — so a listing on any such street silently lost its size
 # whenever the street name fell within the 22-character run-up. A guard that eats good data
 # on a street-name coincidence is worse than the decoy it was defending against.
+# "total", "min", "max" and "site" are GONE from this list. They rejected the ordinary
+# labels a single-tenant listing uses for its OWN size — "Total Size: 2,400 SF",
+# "Total available: 3,200 SF", "Maximum contiguous: 12,000 SF" all returned None. The
+# building does not need a label decoy anyway: _size_of already drops it BY VALUE
+# (s != building), which is the guard that actually knows which number the building is.
 _SIZE_DECOY = re.compile(
-    r"\b(?:building|typical\s+floor|floor\s+plate|floorplate|lot|land|site|total|"
-    r"min(?:imum)?|max(?:imum)?)\b", re.I)
+    r"\b(?:building|typical\s+floor|floor\s+plate|floorplate|lot|land)\b", re.I)
 _SIZE_DECOY_WINDOW = 22
 
 
@@ -511,7 +527,12 @@ def _size_decoyed(text: str, at: int) -> bool:
 # decoying on those would throw away good listings to catch a rare bad one. Acreage and
 # public open space, in the same breath as a square footage, is area prose — a suite is not
 # measured in acres.
-_AREA_PROSE = re.compile(r"\bacres?\b|open\s+space|parkland|esplanade|public\s+plaza", re.I)
+# NOT a bare "acres". A real industrial listing says "situated on 2.5 acres, this property
+# offers 5,000 SF of warehouse space" — decoying on acreage alone deleted its size and
+# then the whole listing. What actually marks the 362 Van Brunt sentence as being about the
+# NEIGHBOURHOOD is public open space, not the acreage: "a rebuilt port, 28 acres of PUBLIC
+# OPEN SPACE, and more than 275,000 SF of new development".
+_AREA_PROSE = re.compile(r"open\s+space|parkland|esplanade|public\s+plaza", re.I)
 _SENTENCE_BACK = 240
 
 
@@ -564,12 +585,26 @@ _DIVISIONS_HDR = re.compile(
 _DIVISIONS_WINDOW = 340
 
 
+# A building that is itself FOR LEASE is not "the building, never the suite" — it IS the
+# space. "For Lease: 25,000 SF industrial building in Vernon" had its 25,000 SF read as the
+# building and excluded, leaving size_sf empty and the listing invisible to every SF filter.
+_LEASE_CTX = re.compile(r"for\s+lease|available|leasing|space\s+available|for\s+rent", re.I)
+_LEASE_CTX_WINDOW = 40
+
+
 def _building_sf(text: str) -> int | None:
     for pat in (_TOTAL_LABEL, _BUILDING_DESC):
         for m in pat.finditer(text):
             v = _num(m.group(1))
-            if _MIN_SF <= v <= _MAX_SF:
-                return int(v)
+            if not (_MIN_SF <= v <= _MAX_SF):
+                continue
+            if pat is _BUILDING_DESC:
+                run_up = text[max(0, m.start() - _LEASE_CTX_WINDOW):m.start()]
+                if _LEASE_CTX.search(run_up):
+                    continue          # the building IS the space on offer
+                if _in_area_prose(text, m.start()):
+                    continue          # a district's pipeline is not this property
+            return int(v)
     return None
 
 
@@ -749,10 +784,16 @@ def _unit_for(val: float, period: str, metro: str, ptype: str) -> str | None:
     if val < _AMBIGUOUS_LO:                        # too small to be a yearly per-SF rate
         return "sf_mo" if val >= _MIN_SF_MO else None
 
-    if metro == "la" or ptype in ("industrial", "flex"):
-        return "sf_mo"                             # the LA / industrial convention
-    if metro in ("nyc", "mia", "chi"):             # these three quote per YEAR
+    if metro == "la":
+        return "sf_mo"                             # SoCal quotes per MONTH, all types
+    if metro in ("nyc", "mia", "chi"):
+        # These three quote per YEAR — INCLUDING industrial. The monthly convention is
+        # LA's, not industrial's: a Miami-Dade warehouse asking "$16.50/SF" means a YEAR,
+        # and calling it sf_mo overstates the ask 12x. The metro we know beats the
+        # property type we guessed.
         return "sf_yr"
+    if ptype in ("industrial", "flex"):
+        return "sf_mo"                             # no metro to go on: industrial default
     return None                                    # we do not know, so we do not say
 
 
@@ -787,6 +828,12 @@ def from_html_facts(html: str, url: str, src: dict, metro: str) -> dict | None:
     rent, so a listing with neither is invisible to every query that matters.
     """
     txt = page_text(html)
+    # The off-market check has to see the RAW headline. _headline splits "105 Miracle Mile
+    # – Leased" on the dash and hands back a clean address, so by the time _clean runs the
+    # word "Leased" is gone — and a page whose URL slug carries no marker sailed straight
+    # in. The page says it in its own <title> and <h1>; we just were not listening.
+    if off_market(_raw_headline(html)):
+        return None
     addr = _headline(html)
     if not addr or not _ADDR_LIKE.match(addr):
         # No street-address-looking headline. Fall back to the URL slug, which is where
@@ -981,12 +1028,24 @@ def describe(d: dict) -> str:
     bits = []
     if d.get("size_sf"):
         bits.append(f"{d['size_sf']:,} SF")
+    elif d.get("total_building_sf"):
+        # No stated availability, but we DO know the building. Blanca's towers publish a
+        # spec sheet and send you elsewhere for the suites — so "a 625,800 SF office
+        # building" is the honest sentence, and it was being written as a bare "office"
+        # with the one fact we had left out of it.
+        bits.append(f"space in a {d['total_building_sf']:,} SF")
     bits.append(d.get("property_type") or "commercial space")
     if d.get("floor"):
         bits.append(f"on floor {d['floor']}")
     if d.get("neighborhood"):
         bits.append(f"in {d['neighborhood']}")
     tail = ""
+    lo, hi = d.get("divisible_min_sf"), d.get("divisible_max_sf")
+    if lo and hi and lo != hi:
+        # The single most useful fact about a multi-tenant building, and we were storing
+        # it and saying nothing: a tenant who needs 1,600 SF cares that a 2,769 SF listing
+        # divides down to it.
+        tail = f", divisible {lo:,}-{hi:,} SF"
     if d.get("asking_rent"):
         # Say the unit the listing actually quotes. LA and industrial quote $/SF/MONTH:
         # rendering $3.20/SF/mo as "$3/SF/yr" is off by 12x AND rounds the cents away,

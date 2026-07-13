@@ -408,6 +408,13 @@ def _to_markdown(body: str) -> str:
 _RANGE_ADDR = re.compile(r"^\s*(\d+)\s+(\d+)\s+(?=\D)")
 
 
+def _is_range(a: str, b: str) -> bool:
+    """"1160 1170" is a range. "1321 5" is 1321 FIFTH Avenue with its ordinal suffix lost.
+    A range spans the same magnitude and ascends; collapsing the other case produced
+    "1321 Avenue" — a street with no name — and sent it to two geocoders."""
+    return len(a) == len(b) and int(b) > int(a)
+
+
 def _collapse_range(address: str) -> str | None:
     """"1160 1170 N Gilbert Street" -> "1160 N Gilbert Street".
 
@@ -421,7 +428,9 @@ def _collapse_range(address: str) -> str | None:
     it, because "1160-1170 N Gilbert" is what the sign on the door says.
     """
     m = _RANGE_ADDR.match(address)
-    return _RANGE_ADDR.sub(m.group(1) + " ", address, count=1) if m else None
+    if not m or not _is_range(m.group(1), m.group(2)):
+        return None
+    return _RANGE_ADDR.sub(m.group(1) + " ", address, count=1)
 
 
 def _geocode(address: str, metro: str) -> tuple[float, float] | None:
@@ -521,6 +530,7 @@ def _out_of_market(d: dict, metro: str) -> bool:
         log.info("%s: %r is in %s, not %s — re-routing to %s",
                  d.get("source"), d.get("address"), st.upper(), metro, target)
         d["metro"] = target        # geocode it as what it IS; _place confirms by bbox
+        d["_rerouted"] = True      # ...and if it CANNOT be confirmed, it does not stay
     return False
 
 
@@ -561,6 +571,15 @@ def _place(d: dict, configured_metro: str) -> bool:
     """
     lat, lng = d.get("lat"), d.get("lng")
     if lat is None or lng is None:
+        if d.pop("_rerouted", False):
+            # We only believed this was Miami because its SLUG said "fl". The geocoder
+            # could not confirm it, so the bbox check never runs — and RIPCO's Panama
+            # City and Tampa listings would sit in Miami, unpinned, forever. A state is
+            # not a metro: Florida is 500 miles long. Unconfirmed re-route = dropped.
+            log.info("%s: %r was re-routed to %s on its slug alone and would not geocode "
+                     "— dropping rather than filing it in a metro we cannot confirm",
+                     d.get("source"), d.get("address"), d.get("metro"))
+            return False
         return True                      # ungeocoded: keep the configured metro, no pin
     actual = metro_for(lat, lng)
     if actual is None:
@@ -581,8 +600,13 @@ def _place(d: dict, configured_metro: str) -> bool:
 # saw no state and could not reject it, and the geocoder was handed a bare street name — the
 # precise input the whole fix exists to avoid.
 # (Neither key is in db._LISTING_COLS, so neither reaches the database.)
+# total_building_sf and the divisible range were MISSING here, so the feed and JSON-LD
+# rungs read a building size off the detail page and then threw it away at the merge —
+# the one whitelist that decides what survives. A fact extracted and discarded is worse
+# than one never extracted: the code looks like it works.
 _FACT_KEYS = ("size_sf", "asking_rent", "rent_unit", "property_type", "sale_price",
-              "transaction_type", "divisible_min_sf", "divisible_max_sf",
+              "transaction_type", "total_building_sf",
+              "divisible_min_sf", "divisible_max_sf",
               "geo_hint", "geo_state")
 
 
