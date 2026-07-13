@@ -399,3 +399,29 @@ def test_the_brokers_headline_never_becomes_the_address():
         "<title>540 Rose Avenue - WESTMAC Commercial Brokerage</title>") == "540 Rose Avenue"
     assert extract._headline(
         "<title>280 Broadway - Ground Floor Retail!! - Prime Corner</title>") == "280 Broadway"
+
+
+def test_a_multi_tenant_building_has_no_single_size_and_the_page_says_so():
+    """Rexford's pages are BUILDINGS, not suites, and they label every number:
+
+        "Property Total SF: 125,514"        <- the complex
+        "Available Unit(s) SF 5,961-9,358"  <- what you can actually lease
+
+    "Most repeated" picked 125,514 — the building — as the size of a 9,358 SF unit, because
+    the total is the number a building page repeats. Reading any single figure as "the size"
+    is wrong in a different way each time. So: the total is the BUILDING, the range is what
+    is leasable, and `size_sf` is the largest contiguous unit — which is what a tenant with a
+    size in mind is actually shopping for."""
+    txt = ("Multi-tenant industrial complex totaling 125,514 SF with 21 tenant spaces. "
+           "Property Details Property Total SF: 125,514 Number of Buildings 1 "
+           "Available Unit(s) SF 5,961-9,358")
+    assert extract._building_sf(txt) == 125514
+    assert extract._available_range(txt) == (5961, 9358)
+    assert extract._size_of(txt) is None, "the building total must not be the size"
+
+    d = extract.from_html_facts(
+        "<html><h1>701 Del Norte Boulevard</h1><p>" + txt + " Oxnard, CA</p></html>",
+        "https://www.rexfordindustrial.com/properties/701-del-norte-boulevard/", _SRC, "la")
+    assert d["size_sf"] == 9358                      # the largest unit you can lease
+    assert (d["divisible_min_sf"], d["divisible_max_sf"]) == (5961, 9358)
+    assert d["total_building_sf"] == 125514          # ...and the building, kept separately

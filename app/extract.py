@@ -388,6 +388,41 @@ _SIZE_LABEL = re.compile(
     r"(?:SF\b|sq\.?\s?ft|square\s+feet)", re.I)
 
 
+# A broker page for a MULTI-TENANT BUILDING has no single "size", and Rexford's pages say so
+# in as many words:
+#     "Property Total SF: 125,514"        <- the BUILDING, not a suite
+#     "Available Unit(s) SF 5,961-9,358"  <- a RANGE of what you can actually lease
+#     "21 tenant spaces ranging from 1,700 to 15,000"
+# Reading any one of those as "the size" is wrong in a different way each time — and the
+# repeated one is the BUILDING, so "most repeated" picked 125,514 SF as the size of a
+# 9,358 SF unit. These labels are ordinary CRE vocabulary, not one site's markup.
+_TOTAL_LABEL = re.compile(
+    r"(?:property\s+total\s+sf|total\s+sf|building\s+(?:size|sf)|total\s+building)"
+    r"\s*[:\-\u2013]?\s*([\d][\d,]{2,9})", re.I)
+_AVAIL_RANGE = re.compile(
+    r"(?:available[^.]{0,24}?|spaces?\s+available[^.]{0,12}?)"
+    r"([\d][\d,]{2,8})\s*[-\u2013]\s*([\d][\d,]{2,8})\s*(?:SF\b|sq)?", re.I)
+
+
+def _building_sf(text: str) -> int | None:
+    for m in _TOTAL_LABEL.finditer(text):
+        v = _num(m.group(1))
+        if _MIN_SF <= v <= _MAX_SF:
+            return int(v)
+    return None
+
+
+def _available_range(text: str) -> tuple[int, int] | None:
+    """"Available Unit(s) SF 5,961-9,358" -> (5961, 9358). What you can actually lease."""
+    for m in _AVAIL_RANGE.finditer(text):
+        lo, hi = _num(m.group(1)), _num(m.group(2))
+        if lo > hi:
+            lo, hi = hi, lo
+        if _MIN_SF <= lo <= hi <= _MAX_SF:
+            return int(lo), int(hi)
+    return None
+
+
 def _size_of(text: str) -> int | None:
     """This listing's size, or None.
 
@@ -401,8 +436,9 @@ def _size_of(text: str) -> int | None:
     document order" is exactly how a 807,000 SF tower became the size of a 3,305 SF suite.
     """
     from collections import Counter
+    building = _building_sf(text)          # explicitly NOT this listing's size
     found = [_num(s) for s in _SIZE.findall(text)]
-    found = [s for s in found if _MIN_SF <= s <= _MAX_SF]
+    found = [s for s in found if _MIN_SF <= s <= _MAX_SF and s != building]
     if not found:
         return None
     counts = Counter(found)
@@ -563,9 +599,22 @@ def from_html_facts(html: str, url: str, src: dict, metro: str) -> dict | None:
         d["geo_hint"] = f"{addr}, {city[0]}, {city[1]}"
         d["geo_state"] = city[1].lower()      # lets _out_of_market reject it before geocoding
 
-    size = _size_of(txt)
-    if size:
-        d["size_sf"] = size
+    total = _building_sf(txt)
+    if total:
+        d["total_building_sf"] = total     # the BUILDING. Never the suite.
+
+    rng = _available_range(txt)
+    if rng:
+        # A multi-tenant building leases a RANGE. The largest contiguous unit is what a
+        # tenant with a size in mind is actually shopping for, so that is `size_sf` — and the
+        # range itself is kept, because "divisible to 5,961 SF" is the answer to a different
+        # question a broker asks constantly.
+        d["divisible_min_sf"], d["divisible_max_sf"] = rng
+        d["size_sf"] = rng[1]
+    else:
+        size = _size_of(txt)
+        if size:
+            d["size_sf"] = size
 
     # The TYPE has to be read before the rent: LA and industrial quote per MONTH, and an
     # unqualified "$5.75/SF" cannot be resolved without knowing which.
